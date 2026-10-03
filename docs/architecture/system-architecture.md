@@ -8,7 +8,7 @@ The connected Supabase project has not received Phase 5 or 6 migrations yet. Rec
 
 ## Phase 7 application status
 
-The public business website and customer booking flow are implemented using a safe database projection and the Phase 6 availability engine. `/book` supports registered customers and configurable guest booking, Any Available Staff, business-local dates, availability-backed times, review, and PENDING request submission. PostgreSQL revalidates each request under the schedule lock, derives service/payment snapshots, creates the event, and keeps PENDING non-blocking. Guest viewing requires an expiring token whose hash is stored in PostgreSQL and whose secret is held in an HttpOnly cookie; UUIDs alone do not grant access. `/account` and customer appointment detail/list routes show only the signed-in customer's data. No payment, notification, or cross-device guest recovery is implemented. See `docs/operations/phase-7-report.md`.
+The public business website and customer booking flow are implemented using a safe database projection and the Phase 6 availability engine. `/book` supports registered customers and configurable guest booking, Any Available Staff, business-local dates, availability-backed times, review, and PENDING request submission. PostgreSQL revalidates each request under the schedule lock, derives service/payment snapshots, creates the event, and keeps PENDING non-blocking. Guest viewing requires an expiring token whose hash is stored in PostgreSQL and whose secret is held in an HttpOnly cookie; UUIDs alone do not grant access. `/account` and customer appointment detail/list routes show only the signed-in customer's data. Guest recovery and transactional booking/payment email use the server-only Resend layer and durable notification outbox; details are in `docs/deployment/email-architecture.md`.
 
 ## Phase 4 application status
 
@@ -122,7 +122,7 @@ Creating a pending payment record requires acceptance; an awaiting-payment attem
 
 Provider events are unique by provider/event ID. Successful payments are immutable, and repeat delivery is idempotent. A verified payment confirms only a live reservation before its deadline. A late payment after expiry/cancellation records the money, adds a payment exception and durable notification, and never resurrects the appointment. Automatic reacquisition/refund is deferred to gateway integration: the safe Phase 2 fallback is manual reconciliation. Pending and successful refunds reserve refundable balance under a lock, preventing excess refunds. No funds move in this phase.
 
-The outbox is written in the same transaction as appointment state changes. Provider delivery and scheduling of jobs are future work; no email/SMS is currently sent. Reports must distinguish cash receipts, deposits, service revenue, refunds and outstanding balances.
+The outbox is written in the same transaction as appointment state changes. A Vercel Cron route leases and dispatches jobs after commit through the server-only Resend API client, with idempotency keys, safe error categories, bounded retries and no rollback of booking/payment facts. Supabase Auth continues to own confirmation, recovery and invite tokens; configure its SMTP separately as documented in `docs/deployment/email-architecture.md`. Reports must distinguish cash receipts, deposits, service revenue, refunds and outstanding balances.
 
 ## Major routes
 

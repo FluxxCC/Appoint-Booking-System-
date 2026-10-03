@@ -1,10 +1,10 @@
 import "server-only";
 
 import { createResendSender } from "./client";
-import type { EmailDeliveryResult } from "./types";
+import type { EmailDeliveryResult, TransactionalEmail } from "./types";
 
 /** Never import from a Client Component or browser bundle. */
-export async function sendTransactionalEmail(input: unknown): Promise<EmailDeliveryResult> {
+export async function sendTransactionalEmail(input: TransactionalEmail): Promise<EmailDeliveryResult> {
   return createResendSender({
     apiKey: process.env.RESEND_API_KEY,
     from: process.env.RESEND_FROM_EMAIL,

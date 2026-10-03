@@ -1,18 +1,14 @@
 export const transactionalEmailKinds = [
-  "auth.account_invitation",
-  "auth.password_setup",
-  "auth.password_recovery",
   "booking.request_received",
-  "booking.accepted",
   "booking.declined",
   "booking.payment_required",
+  "booking.payment_confirmed",
   "booking.confirmed",
   "booking.cancelled",
-  "booking.reminder",
-  "booking.reschedule_proposal",
+  "booking.payment_expired",
+  "booking.guest_access",
   "business.new_booking",
-  "business.cancellation",
-  "business.daily_summary",
+  "business.payment_exception",
 ] as const;
 
 export type TransactionalEmailKind = (typeof transactionalEmailKinds)[number];

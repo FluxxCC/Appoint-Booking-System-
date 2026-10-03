@@ -50,7 +50,7 @@ test("guest booking stays account optional and opens a scoped pending portal", a
   const { id, reference } = await book(page);
   expect(reference).toMatch(/^BK-[A-F0-9]{16}$/);
   await expect(page.getByRole("heading", { name: "Booking request submitted" })).toBeVisible();
-  await expect(page.getByText(/sent a private access link/i)).toBeVisible();
+  await expect(page.getByText(/private access link is queued/i)).toBeVisible();
   await page.getByRole("link", { name: "View booking" }).click();
   await expect(page.getByText(reference)).toBeVisible();
   await expect(page.getByText("Waiting for approval")).toBeVisible();
@@ -114,7 +114,7 @@ test("a signed-in customer can use guest token access without claiming ownership
   await page.goto(`/account/appointments/${id}`);
   await expect(page.getByText("This page could not be found.")).toBeVisible();
   const mailbox = await (await request.get(`${stub}/__e2e/mailbox`)).json();
-  expect(mailbox.emails.length).toBeGreaterThan(0);
+  expect(mailbox.emails).toHaveLength(0); // Appointment mail is delivered by the post-commit outbox worker.
 });
 
 test("signed-in booking explains identity, locks verified email, and sign-out returns to guest", async ({ page }) => {

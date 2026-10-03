@@ -64,6 +64,7 @@ export default async function BookingConfirmation({ searchParams }: { searchPara
     <h1 className="mt-3 display-type text-4xl">{a.state === "PENDING" ? "Booking request submitted" : a.state === "CONFIRMED" ? "Booking confirmed" : appointmentStatus(a.state)}</h1>
     <p className="mt-4 leading-7 text-muted">Status: <strong className="text-ink">{appointmentStatus(a.state)}</strong>. {bookingGuidance(a.state)}</p>
     {accessMethod === "guest" && emailStatus === "sent" && <p className="mt-4 rounded-xl bg-accent-soft p-4 text-sm">We sent a private access link to your booking email. Keep this browser access while your request is pending.</p>}
+    {accessMethod === "guest" && emailStatus === "queued" && <p className="mt-4 rounded-xl bg-accent-soft p-4 text-sm">A private access link is queued for your booking email. Keep this browser access while the message is being sent.</p>}
     {accessMethod === "guest" && emailStatus === "unavailable" && <p className="mt-4 rounded-xl bg-warning-soft p-4 text-sm">The booking succeeded, but we could not send an email link. Keep this browser access and contact the business if you lose it.</p>}
     <div className="mt-8 rounded-2xl border border-line bg-canvas p-5 sm:p-6">
       <p className="text-xs font-semibold uppercase tracking-wider text-muted">Your reference</p>

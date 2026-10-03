@@ -138,6 +138,20 @@ try {
   await denied('guest tokens never exposed','select * from public.guest_access_tokens');
   await denied('outbox never exposed','select * from public.notification_outbox');
   await denied('customer cannot run expiration','select public.expire_due_payments()');
+  await db.exec('reset role');
+  const emailJob=await scalar("insert into public.notification_outbox(kind,deduplication_key) values ('TEST','email-outbox-'||$1::text) returning id",[randomUUID()]);
+  await actor('anon');
+  await denied('anon cannot claim notification jobs','select * from public.claim_notification_outbox(1)');
+  await denied('anon cannot acknowledge notification jobs','select public.finish_notification_outbox($1,true,false,null)',[emailJob]);
+  await actor('authenticated',ids.customerUser);
+  await denied('authenticated cannot claim notification jobs','select * from public.claim_notification_outbox(1)');
+  await denied('authenticated cannot acknowledge notification jobs','select public.finish_notification_outbox($1,true,false,null)',[emailJob]);
+  await actor('service_role');
+  const claim=await db.query("select id,state,attempts from public.claim_notification_outbox(100) where id=$1",[emailJob]);
+  equal('service role atomically claims notification job',claim.rows[0]?.state,'PROCESSING');
+  equal('claim increments attempt count',claim.rows[0]?.attempts,1);
+  equal('service role acknowledges successful delivery',await scalar('select public.finish_notification_outbox($1,true,false,null)',[emailJob]),true);
+  equal('successful delivery is marked delivered',await scalar('select state from public.notification_outbox where id=$1',[emailJob]),'DELIVERED');
   console.log(`PASS: ${checks} database checks (real PostgreSQL via PGlite; Supabase auth shim).`);
 } finally { await db.close(); }
 

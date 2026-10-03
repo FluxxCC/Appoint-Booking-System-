@@ -140,7 +140,6 @@ export type Database = { public: { Tables: {
     Row: {
       id: string;
       customer_id: string;
-      public_reference: string;
       staff_id: string;
       policy_version_id: string;
       request_key: string;
@@ -154,7 +153,6 @@ export type Database = { public: { Tables: {
       total_amount: number;
       payment_mode_snapshot: Database["public"]["Enums"]["payment_mode"];
       required_payment_amount: number;
-      acceptance_source: string;
       accepted_by: string | null;
       accepted_at: string | null;
       declined_by: string | null;
@@ -166,11 +164,12 @@ export type Database = { public: { Tables: {
       cancellation_reason: string | null;
       created_at: string;
       updated_at: string;
+      acceptance_source: string;
+      public_reference: string;
     };
     Insert: {
       id?: string;
       customer_id: string;
-      public_reference?: string;
       staff_id: string;
       policy_version_id: string;
       request_key: string;
@@ -184,7 +183,6 @@ export type Database = { public: { Tables: {
       total_amount: number;
       payment_mode_snapshot: Database["public"]["Enums"]["payment_mode"];
       required_payment_amount: number;
-      acceptance_source?: string;
       accepted_by?: string | null;
       accepted_at?: string | null;
       declined_by?: string | null;
@@ -196,11 +194,12 @@ export type Database = { public: { Tables: {
       cancellation_reason?: string | null;
       created_at?: string;
       updated_at?: string;
+      acceptance_source?: string;
+      public_reference?: string;
     };
     Update: {
       id?: string;
       customer_id?: string;
-      public_reference?: string;
       staff_id?: string;
       policy_version_id?: string;
       request_key?: string;
@@ -214,7 +213,6 @@ export type Database = { public: { Tables: {
       total_amount?: number;
       payment_mode_snapshot?: Database["public"]["Enums"]["payment_mode"];
       required_payment_amount?: number;
-      acceptance_source?: string;
       accepted_by?: string | null;
       accepted_at?: string | null;
       declined_by?: string | null;
@@ -226,6 +224,8 @@ export type Database = { public: { Tables: {
       cancellation_reason?: string | null;
       created_at?: string;
       updated_at?: string;
+      acceptance_source?: string;
+      public_reference?: string;
     };
     Relationships: [];
   };
@@ -577,7 +577,6 @@ export type Database = { public: { Tables: {
       appointment_id: string;
       provider: string;
       provider_reference: string | null;
-      checkout_url: string | null;
       idempotency_key: string;
       amount: number;
       currency: string;
@@ -587,13 +586,13 @@ export type Database = { public: { Tables: {
       exception_reason: string | null;
       created_at: string;
       updated_at: string;
+      checkout_url: string | null;
     };
     Insert: {
       id?: string;
       appointment_id: string;
       provider: string;
       provider_reference?: string | null;
-      checkout_url?: string | null;
       idempotency_key: string;
       amount: number;
       currency: string;
@@ -603,13 +602,13 @@ export type Database = { public: { Tables: {
       exception_reason?: string | null;
       created_at?: string;
       updated_at?: string;
+      checkout_url?: string | null;
     };
     Update: {
       id?: string;
       appointment_id?: string;
       provider?: string;
       provider_reference?: string | null;
-      checkout_url?: string | null;
       idempotency_key?: string;
       amount?: number;
       currency?: string;
@@ -619,6 +618,7 @@ export type Database = { public: { Tables: {
       exception_reason?: string | null;
       created_at?: string;
       updated_at?: string;
+      checkout_url?: string | null;
     };
     Relationships: [];
   };
@@ -985,13 +985,8 @@ export type Database = { public: { Tables: {
 }; Views: { [_ in never]: never }; Functions: {
 expire_due_payments: { Args: {  }; Returns: number };
 record_verified_payment: { Args: { p_payment: string | null; p_event_id: string | null; p_paid_at: string | null }; Returns: string };
-prepare_payment_attempt: { Args: { p_appointment: string | null; p_auth_user: string | null; p_guest_token_hash: string | null; p_provider: string | null; p_idempotency_key: string | null }; Returns: Json };
-attach_payment_checkout: { Args: { p_payment: string | null; p_reference: string | null; p_checkout_url: string | null }; Returns: Json };
 request_appointment: { Args: { p_customer: string | null; p_staff: string | null; p_service: string | null; p_start: string | null; p_request_key: string | null }; Returns: string };
 accept_appointment: { Args: { p_appointment: string | null }; Returns: Database["public"]["Enums"]["appointment_state"] };
-set_booking_approval_mode: { Args: { p_mode: string | null }; Returns: string };
-issue_guest_access_link: { Args: { p_email: string | null; p_reference?: string | null; p_appointment?: string | null }; Returns: Json };
-exchange_guest_access_link: { Args: { p_token_hash: string | null }; Returns: Json };
 transition_appointment: { Args: { p_appointment: string | null; p_target: Database["public"]["Enums"]["appointment_state"] | null; p_reason?: string | null }; Returns: undefined };
 get_access_context: { Args: {  }; Returns: Json };
 complete_customer_profile: { Args: { p_name: string | null; p_phone?: string | null }; Returns: string };
@@ -1020,12 +1015,19 @@ public_catalog: { Args: {  }; Returns: Json };
 public_booking_submit: { Args: { p_service: string | null; p_staff: string | null; p_start: string | null; p_request_key: string | null; p_name: string | null; p_email: string | null; p_phone: string | null }; Returns: Json };
 server_public_booking_submit: { Args: { p_service: string | null; p_staff: string | null; p_start: string | null; p_request_key: string | null; p_name: string | null; p_email: string | null; p_phone: string | null; p_auth_user: string | null }; Returns: Json };
 owner_staff_access: { Args: {  }; Returns: Json };
+set_booking_approval_mode: { Args: { p_mode: string | null }; Returns: string };
 manage_owner_admins: { Args: { p_action: string | null; p_user?: string | null; p_email?: string | null }; Returns: Json };
 server_availability_for_date: { Args: { p_service: string | null; p_date: string | null; p_staff: string | null; p_auth_user: string | null }; Returns: Json };
 guest_appointment_by_token: { Args: { p_token_hash: string | null; p_appointment: string | null }; Returns: Json };
 enable_staff_login: { Args: { p_staff: string | null; p_email: string | null }; Returns: undefined };
 disable_staff_login: { Args: { p_staff: string | null }; Returns: undefined };
 manage_admin_access_by_email: { Args: { p_action: string | null; p_email: string | null }; Returns: Json };
+prepare_payment_attempt: { Args: { p_appointment: string | null; p_auth_user: string | null; p_guest_token_hash: string | null; p_provider: string | null; p_idempotency_key: string | null }; Returns: Json };
+issue_guest_access_link: { Args: { p_email: string | null; p_reference?: string | null; p_appointment?: string | null }; Returns: Json };
+exchange_guest_access_link: { Args: { p_token_hash: string | null }; Returns: Json };
+attach_payment_checkout: { Args: { p_payment: string | null; p_reference: string | null; p_checkout_url: string | null }; Returns: Json };
+claim_notification_outbox: { Args: { p_limit?: number | null }; Returns: string };
+finish_notification_outbox: { Args: { p_id: string | null; p_success: boolean | null; p_retryable?: boolean | null; p_error_code?: string | null }; Returns: boolean };
 }; Enums: {
 app_role: "OWNER" | "ADMIN" | "STAFF";
 appointment_state: "PENDING" | "DECLINED" | "ACCEPTED" | "AWAITING_PAYMENT" | "PAYMENT_EXPIRED" | "CONFIRMED" | "CHECKED_IN" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED" | "NO_SHOW";

@@ -22,6 +22,9 @@ export default defineConfig({
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "e2e-test-publishable-key",
       NEXT_PUBLIC_SITE_URL: baseURL,
       SUPABASE_SECRET_KEY: "e2e-test-server-only-secret",
+      // Keep isolated browser tests off the developer's real shared Redis counters.
+      UPSTASH_REDIS_REST_URL: "",
+      UPSTASH_REDIS_REST_TOKEN: "",
       PAYMONGO_SECRET_KEY: "sk_test_e2e-only",
       RESEND_API_KEY: "e2e-only",
       RESEND_FROM_EMAIL: "bookings@example.test",

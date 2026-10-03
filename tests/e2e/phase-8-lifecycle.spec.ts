@@ -34,7 +34,7 @@ async function actorPage(browser: Browser, email: string, password: string) {
   return { page, context };
 }
 
-test("owner accepts a pending guest booking and the guest sees payment required", async ({ page, browser, request }) => {
+test("guest checkout fetch sends only the appointment ID and navigates to the validated hosted URL", async ({ page, browser, request }) => {
   await scenario(request, "ADMIN_APPROVAL");
   const id=await bookAsGuest(page);
   await expect(page.getByRole("heading",{name:"Booking request submitted"})).toBeVisible();
@@ -49,15 +49,19 @@ test("owner accepts a pending guest booking and the guest sees payment required"
   const payButton = page.getByRole("button", { name: "Pay online" });
   await expect(payButton).toBeEnabled();
   let submittedFields: string[] = [];
+  await page.route("https://checkout.paymongo.com/cs_test_e2e", async route => {
+    await route.fulfill({ status: 200, contentType: "text/html", body: "Hosted checkout test" });
+  });
   await page.route("**/api/payments/checkout", async route => {
-    const form = new URLSearchParams(route.request().postData() ?? "");
-    submittedFields = [...form.keys()];
-    expect(form.get("appointmentId")).toBe(id);
-    await route.fulfill({ status: 303, headers: { Location: new URL("/payment/return?result=checking", route.request().url()).toString() } });
+    const body = route.request().postDataBuffer()?.toString() ?? "";
+    submittedFields = [...body.matchAll(/name="([^"]+)"/g)].map(match => match[1]);
+    expect(body).toContain(id);
+    expect(route.request().headers()["accept"]).toContain("application/json");
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ checkoutUrl: "https://checkout.paymongo.com/cs_test_e2e" }) });
   });
   await payButton.click();
-  await expect(page).toHaveURL(/\/payment\/return\?result=checking/);
-  await expect(page.getByRole("heading", { name: "Checking payment status" })).toBeVisible();
+  await expect(page).toHaveURL("https://checkout.paymongo.com/cs_test_e2e");
+  await expect(page.getByText("Hosted checkout test")).toBeVisible();
   expect(submittedFields).toEqual(["appointmentId"]);
   await owner.context.close();
 });

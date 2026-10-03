@@ -155,7 +155,7 @@ const server = createServer(async (request, response) => {
     } else if (table === "appointment_items") {const appointment=[...state.appointments.values()].find(x=>filterMatches(appointmentFilter,x.id));if(appointment)rows=[{appointment_id:appointment.id,service_name_snapshot:service.name,duration_minutes:service.duration_minutes}]}
     else if (table === "staff" && filterMatches(idFilter,staffId)) rows = [{ id: staffId, display_name: staff.display_name }];
     else if (table === "customers" && registered) rows = [{ id: customerId, display_name: "E2E Customer", email: customerEmail, phone: null }];
-    else if (table === "business_settings") rows = [{ timezone: "UTC",booking_approval_mode:state.approvalMode }];
+    else if (table === "business_settings") rows = [{ name: business.name, timezone: "UTC",booking_approval_mode:state.approvalMode }];
     else if (table === "payments") rows = [];
     return send(response, 200, rows, { "Content-Range": `0-${rows.length - 1}/${rows.length}` });
   }

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { startPaymentCheckout } from "@/lib/payments/checkout.server";
 import { createPayMongoProvider, isPayMongoTestConfigured } from "@/lib/payments/paymongo.server";
 import { consumeRateLimit, trustedClientIdentifier } from "@/features/availability/rate-limit.server";
+import { siteUrl } from "@/lib/auth/site-url.server";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -18,7 +19,7 @@ function returnTo(request: Request, result: string, status = 303) {
 export async function POST(request: Request) {
   const origin = request.headers.get("origin");
   try {
-    if (!origin || new URL(origin).origin !== new URL(request.url).origin) {
+    if (!origin || origin === "null" || origin !== siteUrl()) {
       return new Response("Forbidden", { status: 403, headers: { "Cache-Control": "no-store" } });
     }
   } catch {
@@ -42,6 +43,11 @@ export async function POST(request: Request) {
     const checkoutUrl = new URL(checkout.checkoutUrl);
     if (checkoutUrl.protocol !== "https:" || checkoutUrl.hostname !== "checkout.paymongo.com") {
       return returnTo(request, "unavailable");
+    }
+    if (request.headers.get("accept")?.includes("application/json")) {
+      return Response.json({ checkoutUrl: checkoutUrl.toString() }, {
+        headers: { "Cache-Control": "no-store, max-age=0", "Referrer-Policy": "no-referrer" },
+      });
     }
     return new Response(null, {
       status: 303,
