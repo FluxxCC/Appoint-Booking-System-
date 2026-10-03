@@ -5,6 +5,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireArea } from "@/lib/auth/access.server";
 import type { Database } from "@/types/database.generated";
 import type { FormState } from "@/features/auth/schemas";
+import { dispatchNotificationsAfterCommit } from "@/server/email/post-commit.server";
 
 const idSchema = z.uuid();
 const reasonSchema = z.string().trim().min(10).max(1000);
@@ -26,6 +27,7 @@ async function accept(client: Client, form: FormData): Promise<FormState> {
   if (!id.success) return { error: "Choose a valid appointment." };
   const { data, error } = await client.rpc("accept_appointment", { p_appointment: id.data });
   if (error) return failure(error);
+  dispatchNotificationsAfterCommit();
   revalidatePath("/admin/appointments");
   revalidatePath(`/admin/appointments/${id.data}`);
   revalidatePath("/admin/calendar");
@@ -42,6 +44,7 @@ async function decline(client: Client, form: FormData): Promise<FormState> {
     p_appointment: id.data, p_target: "DECLINED", p_reason: reason.data,
   });
   if (error) return failure(error);
+  dispatchNotificationsAfterCommit();
   revalidatePath("/admin/appointments");
   revalidatePath(`/admin/appointments/${id.data}`);
   revalidatePath("/staff");
@@ -76,6 +79,7 @@ export async function advanceAsAdmin(_state: FormState, form: FormData): Promise
     p_appointment: id.data, p_target: target.data, p_reason: reason || null,
   });
   if (error) return failure(error);
+  dispatchNotificationsAfterCommit();
   revalidatePath("/admin/appointments");
   revalidatePath(`/admin/appointments/${id.data}`);
   revalidatePath("/admin/calendar");

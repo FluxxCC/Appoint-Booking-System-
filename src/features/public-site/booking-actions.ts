@@ -8,6 +8,7 @@ import { readVerifiedUser } from "@/lib/auth/require-user.server";
 import { createPrivilegedClient } from "@/lib/supabase/privileged.server";
 import { createClient } from "@/lib/supabase/server";
 import { consumeRateLimit, trustedClientIdentifier } from "@/features/availability/rate-limit.server";
+import { dispatchNotificationsAfterCommit } from "@/server/email/post-commit.server";
 
 const schema=z.object({serviceId:z.uuid(),staffId:z.union([z.literal(""),z.uuid()]),startsAt:z.iso.datetime({offset:true}),requestKey:z.uuid(),fullName:z.string().trim().min(2).max(200),email:z.union([z.literal(""),z.email().max(254)]),phone:z.string().trim().regex(/^$|^\+?[0-9 ()-]{7,25}$/).max(25)});
 export type BookingFormState={error?:string};
@@ -43,6 +44,7 @@ export async function submitBookingAction(_previous:BookingFormState,form:FormDa
  }
  const booking=data as {appointment_id?:unknown;guest_token?:unknown};
  if(typeof booking.appointment_id!=="string")return {error:"We could not confirm the request. Please try again."};
+ dispatchNotificationsAfterCommit();
  if(!user){
   if(typeof booking.guest_token!=="string"||!/^[A-Za-z0-9_-]{40,60}$/.test(booking.guest_token))return {error:"This request was already received. A retry does not create new guest access; reopen the original confirmation page in the browser where you submitted it."};
   const store=await cookies();

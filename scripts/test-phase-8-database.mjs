@@ -20,6 +20,14 @@ const accept = id => scalar('select public.accept_appointment($1)',[id]);
 const decline = (id,reason='The requested time is unavailable') => scalar("select public.transition_appointment($1,'DECLINED',$2)",[id,reason]);
 const state = id => scalar('select state from public.appointments where id=$1',[id]);
 const eventCount = id => scalar('select count(*)::int from public.appointment_events where appointment_id=$1',[id]);
+const outboxCount = async id => {
+  const previousRole=await scalar("select current_setting('role',true)");
+  await db.exec('reset role');await db.exec('set role service_role');
+  const count=await scalar('select count(*)::int from public.notification_outbox where appointment_id=$1',[id]);
+  await db.exec('reset role');
+  if(previousRole&&previousRole!=='none')await db.exec(`set role ${previousRole}`);
+  return count;
+};
 
 try {
   for (const name of ['owner','admin','staffOne','staffTwo','customerOne','customerTwo'])
@@ -41,7 +49,9 @@ try {
 
   await actor('authenticated',ids.customerOne);
   const a=await request(ids.customerOneRow,ids.staffOneRow,ids.cash,t1);
+  equal('booking commit atomically queues its initial notification',await outboxCount(a),1);
   const b=await request(ids.customerOneRow,ids.staffOneRow,ids.cash,t1);
+  equal('second booking commit queues its own notification',await outboxCount(b),1);
   equal('overlapping requests are pending',await scalar("select count(*)::int from public.appointments where staff_id=$1 and starts_at=$2 and state='PENDING'",[ids.staffOneRow,t1]),2);
   await actor('authenticated',ids.staffOne);
   await denied('staff cannot accept in admin mode','select public.accept_appointment($1)',[a],/not authorized/);
@@ -55,16 +65,19 @@ try {
   equal('accepted source is manual',await scalar('select acceptance_source from public.appointments where id=$1',[a]),'MANUAL');
   equal('cash acceptance requires no online payment',await scalar('select payment_due_at from public.appointments where id=$1',[a]),null);
   const firstEvents=await eventCount(a);
+  const firstOutboxRows=await outboxCount(a);
   equal('repeated acceptance returns state',await accept(a),'CONFIRMED');
   equal('repeated acceptance appends no event',await eventCount(a),firstEvents);
+  equal('repeated acceptance appends no duplicate outbox event',await outboxCount(a),firstOutboxRows);
   await actor('authenticated',ids.admin,'aal2');
   await denied('second acceptance has safe conflict','select public.accept_appointment($1)',[b],/no longer available/);
   equal('losing request stays pending',await state(b),'PENDING');
   await denied('decline needs useful reason',"select public.transition_appointment($1,'DECLINED','no')",[b],/useful decline reason/);
   await decline(b);
   equal('decline reason persisted',await scalar('select decline_reason from public.appointments where id=$1',[b]),'The requested time is unavailable');
-  const declinedEvents=await eventCount(b);await decline(b);
+  const declinedEvents=await eventCount(b),declinedOutboxRows=await outboxCount(b);await decline(b);
   equal('repeated decline appends no event',await eventCount(b),declinedEvents);
+  equal('repeated decline appends no duplicate outbox event',await outboxCount(b),declinedOutboxRows);
   equal('decline did not reserve',await state(b),'DECLINED');
   equal('admin accept is audited',await scalar("select count(*)::int from public.audit_logs where entity_id=$1 and action='BOOKING_ACCEPTED'",[a]),1);
   equal('admin decline is audited',await scalar("select count(*)::int from public.audit_logs where entity_id=$1 and action='BOOKING_DECLINED'",[b]),1);

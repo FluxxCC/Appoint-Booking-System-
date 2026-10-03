@@ -44,6 +44,7 @@ test.beforeEach(async ({ request }) => {
 });
 
 test("guest booking stays account optional and opens a scoped pending portal", async ({ page, browser, request }) => {
+  await request.put(`${stub}/__e2e/state`, { data: { failOutboxClaim: true } });
   await page.goto("/");
   await expect(page.getByRole("link", { name: "Sign in" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Book now" }).first()).toBeVisible();
@@ -61,6 +62,7 @@ test("guest booking stays account optional and opens a scoped pending portal", a
   await fresh.close();
   const stats = await (await request.get(`${stub}/__e2e/stats`)).json();
   expect(stats.appointments).toBe(1);
+  await expect.poll(async () => (await (await request.get(`${stub}/__e2e/stats`)).json()).outboxDispatches).toBe(1);
 });
 
 test("recovery response is generic, email exchange restores access, and replay fails", async ({ page, browser, request }) => {

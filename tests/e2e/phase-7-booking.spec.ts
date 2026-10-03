@@ -106,7 +106,7 @@ test("guest retries reuse the request key and do not create another appointment"
   await expect(page.locator('p[role="alert"]')).toContainText(/retry does not create new guest access/i);
   expect(new URL(page.url()).searchParams.get("id")).not.toBe(firstId);
   const stats = await (await request.get(`${stub}/__e2e/stats`)).json();
-  expect(stats).toEqual({ appointments: 1, requestKeys: 1 });
+  expect(stats).toEqual({ appointments: 1, requestKeys: 1, outboxDispatches: 2 });
 });
 
 test("guest and registration settings and availability empty/error states have clear responses", async ({ page, request }) => {

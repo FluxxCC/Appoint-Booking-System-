@@ -18,7 +18,7 @@ const users = [
 const serviceId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const staffId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const otherAppointmentId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
-const state = { guest: true, registration: true, availability: "normal", approvalMode: "ADMIN_APPROVAL", appointments: new Map(), requests: new Map(), tokens: new Map(), exchanges: new Map(), emails: [] };
+const state = { guest: true, registration: true, availability: "normal", approvalMode: "ADMIN_APPROVAL", appointments: new Map(), requests: new Map(), tokens: new Map(), exchanges: new Map(), emails: [], outboxDispatches: 0, failOutboxClaim: false };
 const business = { name: "E2E Test Studio", description: "A local test business.", timezone: "UTC", currency: "PHP", contact_email: "hello@example.test", contact_phone: null, address: "1 Test Way", guest_booking_enabled: true, customer_registration_enabled: true };
 const service = { id: serviceId, name: "Consultation", slug: "consultation", description: "A test service.", image_path: null, price_amount: 3500, duration_minutes: 45, category_id: null, payment_mode: "DEPOSIT", deposit_amount: 500 };
 const staff = { id: staffId, display_name: "Taylor", slug: "taylor", bio: "", photo_path: null };
@@ -45,10 +45,11 @@ const server = createServer(async (request, response) => {
   if (url.pathname === "/auth/v1/.well-known/jwks.json") return send(response, 200, jwks);
   if (url.pathname === "/__e2e/state" && request.method === "PUT") {
     const next = await body(request); state.guest = next.guest ?? true; state.registration = next.registration ?? true; state.availability = next.availability ?? "normal"; state.approvalMode=next.approvalMode??"ADMIN_APPROVAL";
-    if (next.reset) { state.appointments.clear(); state.requests.clear(); state.tokens.clear(); state.exchanges.clear(); state.emails.length = 0; }
+    if (next.failOutboxClaim !== undefined) state.failOutboxClaim = next.failOutboxClaim;
+    if (next.reset) { state.appointments.clear(); state.requests.clear(); state.tokens.clear(); state.exchanges.clear(); state.emails.length = 0; state.outboxDispatches = 0; state.failOutboxClaim = next.failOutboxClaim ?? false; }
     return send(response, 200, { ok: true });
   }
-  if (url.pathname === "/__e2e/stats") return send(response, 200, { appointments: state.appointments.size, requestKeys: state.requests.size });
+  if (url.pathname === "/__e2e/stats") return send(response, 200, { appointments: state.appointments.size, requestKeys: state.requests.size, outboxDispatches: state.outboxDispatches });
   if (url.pathname === "/auth/v1/token" && url.searchParams.get("grant_type") === "password") {
     const credentials = await body(request);
     const user=users.find(user=>user.email===credentials.email&&user.password===credentials.password);
@@ -64,6 +65,11 @@ const server = createServer(async (request, response) => {
   }
   if (url.pathname.startsWith("/rest/v1/rpc/")) {
     const name = url.pathname.split("/").at(-1), args = await body(request);
+    if (name === "claim_notification_outbox") {
+      state.outboxDispatches += 1;
+      if (state.failOutboxClaim) return send(response, 503, { message: "test outbox failure" });
+      return send(response, 200, []);
+    }
     if (name === "registration_enabled") return send(response, 200, state.registration);
     if (name === "get_access_context") { const user=tokenUser(request); return send(response, 200, { profileActive: true, roles: user?.roles??[], staffActive: user?.id===staffUserId }); }
     if (name === "public_website_data") return send(response, 200, { business: { ...business, guest_booking_enabled: state.guest, customer_registration_enabled: state.registration, booking_approval_mode: state.approvalMode }, website: null, services: [service], staff: [staff], assignments: [{ service_id: serviceId, staff_id: staffId }], categories: [], hours: [{ weekday: 0, opens_at: "00:00:00", closes_at: "23:59:00" }, { weekday: 1, opens_at: "00:00:00", closes_at: "23:59:00" }, { weekday: 2, opens_at: "00:00:00", closes_at: "23:59:00" }, { weekday: 3, opens_at: "00:00:00", closes_at: "23:59:00" }, { weekday: 4, opens_at: "00:00:00", closes_at: "23:59:00" }, { weekday: 5, opens_at: "00:00:00", closes_at: "23:59:00" }, { weekday: 6, opens_at: "00:00:00", closes_at: "23:59:00" }], announcements: [], policy });
