@@ -122,7 +122,7 @@ async function appointmentCta(client: ReturnType<typeof createPrivilegedClient>,
   });
   const parsed = guestLink.safeParse(data);
   if (error || !parsed.success || parsed.data.appointment_id !== appointment.id) throw new DeliveryFailure("provider_error", true);
-  return `${siteUrl()}/booking/access#token=${encodeURIComponent(parsed.data.token)}`;
+  return `${siteUrl()}/booking/access?token=${encodeURIComponent(parsed.data.token)}`;
 }
 
 async function sendToRecipient(input: Omit<AppointmentEmailDetails, "idempotencyKey">, job: OutboxRow, role: string) {
@@ -265,7 +265,7 @@ async function deliverGuestAccess(job: OutboxRow) {
   const result = await sendTransactionalEmail(renderGuestAccessEmail({
     to: recipient.email,
     reference: appointment.public_reference,
-    bookingUrl: `${siteUrl()}/booking/access#token=${encodeURIComponent(parsed.data.token)}`,
+    bookingUrl: `${siteUrl()}/booking/access?token=${encodeURIComponent(parsed.data.token)}`,
     businessName: business.name,
     idempotencyKey,
   }));

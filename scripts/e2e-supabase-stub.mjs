@@ -8,10 +8,12 @@ const signingKid = "e2e-local-auth";
 const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const jwks = { keys: [{ ...publicKey.export({ format: "jwk" }), kid: signingKid, alg: "RS256", use: "sig", key_ops: ["verify"] }] };
 const customerId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+const otherCustomerId = "ffffffff-ffff-4fff-8fff-ffffffffffff";
 const ownerId = "11111111-1111-4111-8111-111111111111";
 const staffUserId = "22222222-2222-4222-8222-222222222222";
 const users = [
   { id: customerId, email: customerEmail, password, name: "E2E Customer", roles: [], aal: "aal1" },
+  { id: otherCustomerId, email: "other-customer@example.test", password: "e2e-other-passphrase", name: "Other E2E Customer", roles: [], aal: "aal1" },
   { id: ownerId, email: "owner@example.test", password: "e2e-owner-passphrase", name: "E2E Owner", roles: ["OWNER"], aal: "aal2" },
   { id: staffUserId, email: "staff@example.test", password: "e2e-staff-passphrase", name: "E2E Staff", roles: ["STAFF"], aal: "aal1" },
 ];
@@ -51,6 +53,7 @@ const server = createServer(async (request, response) => {
     const next = await body(request); state.guest = next.guest ?? true; state.registration = next.registration ?? true; state.availability = next.availability ?? "normal"; state.approvalMode=next.approvalMode??"ADMIN_APPROVAL";
     if (next.failOutboxClaim !== undefined) state.failOutboxClaim = next.failOutboxClaim;
     if (next.reset) { state.appointments.clear(); state.requests.clear(); state.tokens.clear(); state.exchanges.clear(); state.events.clear(); state.outbox.length = 0; state.receipts.length = 0; state.emails.length = 0; state.outboxDispatches = 0; state.failOutboxClaim = next.failOutboxClaim ?? false; }
+    if (next.ageExchangesMinutes !== undefined) for (const exchange of state.exchanges.values()) exchange.expiresAt -= Number(next.ageExchangesMinutes) * 60_000;
     if (next.seedUnrelatedOutbox) {
       const eventId=randomUUID();
       addOutbox({ id: otherAppointmentId }, "APPOINTMENT_STATE_CHANGED", eventId);
@@ -67,7 +70,7 @@ const server = createServer(async (request, response) => {
     addOutbox(appointment,"APPOINTMENT_STATE_CHANGED",eventId);
     return send(response, 200, { ok: true });
   }
-  if (url.pathname === "/__e2e/stats") return send(response, 200, { appointments: state.appointments.size, requestKeys: state.requests.size, outboxDispatches: state.outboxDispatches, outbox: state.outbox.map(job => ({ state: job.state, attempts: job.attempts, last_error: job.last_error })), receipts: state.receipts.length });
+  if (url.pathname === "/__e2e/stats") return send(response, 200, { appointments: state.appointments.size, requestKeys: state.requests.size, outboxDispatches: state.outboxDispatches, exchanges: { ready: [...state.exchanges.values()].filter(x => !x.consumedAt && x.expiresAt > Date.now()).length, used: [...state.exchanges.values()].filter(x => x.consumedAt).length }, outbox: state.outbox.map(job => ({ state: job.state, attempts: job.attempts, last_error: job.last_error })), receipts: state.receipts.length });
   if (url.pathname === "/auth/v1/token" && url.searchParams.get("grant_type") === "password") {
     const credentials = await body(request);
     const user=users.find(user=>user.email===credentials.email&&user.password===credentials.password);
@@ -162,8 +165,8 @@ const server = createServer(async (request, response) => {
     }
     if (name === "exchange_guest_access_link") {
       const exchange = state.exchanges.get(args.p_token_hash);
-      if (!exchange || exchange.expiresAt <= Date.now()) { state.exchanges.delete(args.p_token_hash); return send(response, 200, null); }
-      state.exchanges.delete(args.p_token_hash);
+      if (!exchange || exchange.consumedAt || exchange.expiresAt <= Date.now()) return send(response, 200, null);
+      exchange.consumedAt = Date.now();
       const token = randomBytes(32).toString("base64url"), appointment = state.appointments.get(exchange.appointmentId);
       state.tokens.set(`${createHash("sha256").update(token).digest("hex")}:${exchange.appointmentId}`, { appointment, token });
       return send(response, 200, { appointment_id: exchange.appointmentId, guest_token: token });
@@ -213,18 +216,24 @@ const server = createServer(async (request, response) => {
   if (url.pathname.startsWith("/rest/v1/")) {
     const table = url.pathname.split("/").at(-1), idFilter = url.searchParams.get("id"), id = idFilter?.replace(/^eq\./, ""), appointmentFilter=url.searchParams.get("appointment_id"), customerFilter=url.searchParams.get("customer_id"), auth = request.headers.authorization?.split(" ")[1] ?? "";
     const filterMatches=(filter,value)=>filter===`eq.${value}`||filter===`in.(${value})`||filter?.startsWith("in.(")&&filter.slice(4,-1).split(",").includes(value);
-    let registered=false;try{registered=JSON.parse(Buffer.from(auth.split(".")[1]??"","base64url").toString()).sub===customerId}catch{}
+    let signedInCustomer=null;try{const sub=JSON.parse(Buffer.from(auth.split(".")[1]??"","base64url").toString()).sub;signedInCustomer=[customerId,otherCustomerId].includes(sub)?sub:null}catch{}
     let rows = [];
     if (table === "appointments") {
-      const appointment = id ? currentAppointment(id) : filterMatches(customerFilter,customerId) ? [...state.appointments.values()].find(x => x.customer_id === customerId) : null;
-      if (appointment && ((registered && appointment.customer_id === customerId) || request.headers.apikey === "e2e-test-server-only-secret")) rows = [appointment];
+      const appointment = id ? currentAppointment(id) : signedInCustomer && filterMatches(customerFilter,signedInCustomer) ? [...state.appointments.values()].find(x => x.customer_id === signedInCustomer) : null;
+      if (appointment && ((signedInCustomer && appointment.customer_id === signedInCustomer) || request.headers.apikey === "e2e-test-server-only-secret")) rows = [appointment];
     } else if (table === "appointment_items") {const appointment=[...state.appointments.values()].find(x=>filterMatches(appointmentFilter,x.id));if(appointment)rows=[{appointment_id:appointment.id,service_name_snapshot:service.name,duration_minutes:service.duration_minutes}]}
     else if (table === "staff" && filterMatches(idFilter,staffId)) rows = [{ id: staffId, display_name: staff.display_name, auth_user_id: staffUserId, active: true }];
-    else if (table === "customers") { const appointment=[...state.appointments.values()].find(x=>filterMatches(idFilter,x.customer_id)); if(appointment && request.headers.apikey === "e2e-test-server-only-secret") rows=[{ id: appointment.customer_id, display_name: appointment.customer_name, email: appointment.customer_email, auth_user_id: appointment.customer_id===customerId?customerId:null, phone: null }]; else if(registered) rows = [{ id: customerId, display_name: "E2E Customer", email: customerEmail, phone: null, auth_user_id: customerId }]; }
+    else if (table === "customers") { const appointment=[...state.appointments.values()].find(x=>filterMatches(idFilter,x.customer_id)); if(appointment && request.headers.apikey === "e2e-test-server-only-secret") rows=[{ id: appointment.customer_id, display_name: appointment.customer_name, email: appointment.customer_email, auth_user_id: appointment.customer_id===customerId?customerId:null, phone: null }]; else if(signedInCustomer) rows = [{ id: signedInCustomer, display_name: signedInCustomer===customerId?"E2E Customer":"Other E2E Customer", email: signedInCustomer===customerId?customerEmail:"other-customer@example.test", phone: null, auth_user_id: signedInCustomer }]; }
     else if (table === "business_settings") rows = [{ name: business.name, timezone: "UTC",booking_approval_mode:state.approvalMode }];
     else if (table === "appointment_events") {const scoped=url.searchParams.get("appointment_id")?.replace(/^eq\./,"");const toState=url.searchParams.get("to_state")?.replace(/^eq\./,"");rows=id?(state.events.has(id)?[state.events.get(id)]:[]):[...state.events.values()].filter(e=>(!scoped||e.appointment_id===scoped)&&(!toState||e.to_state===toState));}
     else if (table === "user_roles") rows = [{ auth_user_id: ownerId, role: "OWNER" }];
     else if (table === "profiles") { const authId=url.searchParams.get("auth_user_id")?.replace(/^eq\./, ""); rows = authId ? [{ auth_user_id: authId, disabled_at: null }] : []; }
+    else if (table === "guest_access_tokens") {
+      if (request.headers.apikey !== "e2e-test-server-only-secret") return send(response, 403, { message: "Not authorized" });
+      const hash = url.searchParams.get("token_hash")?.replace(/^eq\./, "");
+      const exchange = state.exchanges.get(hash);
+      if (exchange) rows = [{ appointment_id: exchange.appointmentId, expires_at: new Date(exchange.expiresAt).toISOString(), consumed_at: exchange.consumedAt ? new Date(exchange.consumedAt).toISOString() : null, revoked_at: null }];
+    }
     else if (table === "payments") rows = [];
     return send(response, 200, rows, { "Content-Range": `0-${rows.length - 1}/${rows.length}` });
   }

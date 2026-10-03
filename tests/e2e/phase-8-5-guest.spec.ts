@@ -31,11 +31,11 @@ async function book(page: Page, email = "guest-e2e@example.test") {
 }
 
 async function emailedLink(request: APIRequestContext) {
-  await expect.poll(async () => (await (await request.get(`${stub}/__e2e/mailbox`)).json()).emails.some((email: { text?: string }) => String(email.text).includes("/booking/access#token="))).toBeTruthy();
+  await expect.poll(async () => (await (await request.get(`${stub}/__e2e/mailbox`)).json()).emails.some((email: { text?: string }) => String(email.text).includes("/booking/access?token="))).toBeTruthy();
   const mailbox = await (await request.get(`${stub}/__e2e/mailbox`)).json();
-  const message = mailbox.emails.findLast((email: { text?: string }) => String(email.text).includes("/booking/access#token="));
-  expect(String(message.text)).toMatch(/Booking reference is BK-[A-F0-9]{16}/i);
-  const link = String(message.text).match(/http:\/\/127\.0\.0\.1:3100\/booking\/access#token=[A-Za-z0-9_-]+/)?.[0];
+  const message = mailbox.emails.findLast((email: { text?: string }) => String(email.text).includes("/booking/access?token="));
+  expect(String(message.text)).toMatch(/Booking reference(?::| is) BK-[A-F0-9]{16}/i);
+  const link = String(message.text).match(/http:\/\/127\.0\.0\.1:3100\/booking\/access\?token=[A-Za-z0-9_-]+/)?.[0];
   expect(link).toBeTruthy();
   return link!;
 }
@@ -71,7 +71,7 @@ test("a committed guest booking is immediately emailed through the outbox and ac
   await expect(page.getByRole("heading", { name: "Booking request submitted" })).toBeVisible();
   const mailbox = await (await request.get(`${stub}/__e2e/mailbox`)).json();
   expect(mailbox.emails).toHaveLength(2);
-  expect(mailbox.emails.some((email: { to?: string[]; text?: string }) => email.to?.includes("guest-e2e@example.test") && String(email.text).includes("/booking/access#token="))).toBe(true);
+  expect(mailbox.emails.some((email: { to?: string[]; text?: string }) => email.to?.includes("guest-e2e@example.test") && String(email.text).includes("/booking/access?token="))).toBe(true);
   expect(mailbox.emails.some((email: { to?: string[]; text?: string }) => email.to?.includes("owner@example.test") && String(email.text).includes(`/auth/continue?next=%2Fadmin%2Fappointments%2F${id}`))).toBe(true);
   const ownerMail = mailbox.emails.find((email: { to?: string[] }) => email.to?.includes("owner@example.test"));
   const ownerLink = String(ownerMail.text).match(/http:\/\/127\.0\.0\.1:3100\/auth\/continue\?next=%2Fadmin%2Fappointments%2F[0-9a-f-]+/)?.[0];
@@ -136,14 +136,57 @@ test("recovery response is generic, email exchange restores access, and replay f
   await expect(generic).toContainText(/If those details match/i);
   await expect.poll(async () => (await (await request.get(`${stub}/__e2e/mailbox`)).json()).emails.length, { timeout: 15_000 }).toBe(before + 1);
   const link = await emailedLink(request);
+  expect((await request.get(link)).status()).toBe(200);
+  expect((await request.head(link)).status()).toBe(200);
   await fresh.goto(link);
+  await expect(fresh.getByRole("button", { name: "Continue to booking" })).toBeVisible();
+  expect((await (await request.get(`${stub}/__e2e/stats`)).json()).exchanges.ready).toBeGreaterThan(0);
+  await fresh.getByRole("button", { name: "Continue to booking" }).click();
   await expect(fresh).toHaveURL(new RegExp(`/booking/manage\\?id=${id}`));
+  await expect(fresh.getByText(reference)).toBeVisible();
+  await fresh.reload();
+  await expect(fresh.getByText(reference)).toBeVisible();
+  await fresh.goto(link);
+  await expect(fresh.getByText(/already has access/)).toBeVisible();
+  await fresh.getByRole("link", { name: "View booking" }).click();
   await expect(fresh.getByText(reference)).toBeVisible();
   const replay = await browser.newPage();
   await replay.goto(link);
-  await expect(replay.getByText(/invalid.*expired|already used/i)).toBeVisible();
+  await expect(replay.getByText(/already been used/i)).toBeVisible();
   await replay.close();
   await fresh.close();
+});
+
+test("guest link remains usable at 59 minutes and reports real expiration after 60 minutes", async ({ page, browser, request }) => {
+  await book(page);
+  const link = await emailedLink(request);
+  await request.put(`${stub}/__e2e/state`, { data: { ageExchangesMinutes: 59 } });
+  const timely = await browser.newPage();
+  await timely.goto(link);
+  await expect(timely.getByRole("button", { name: "Continue to booking" })).toBeVisible();
+  await timely.close();
+  await request.put(`${stub}/__e2e/state`, { data: { ageExchangesMinutes: 2 } });
+  const expired = await browser.newPage();
+  await expired.goto(link);
+  await expect(expired.getByText(/one-time link has expired/i)).toBeVisible();
+  await expect(expired.getByRole("link", { name: "Send me a new secure link" })).toBeVisible();
+  await expired.close();
+});
+
+test("invalid and older fragment links reveal no booking, while an older valid link can be exchanged", async ({ page, browser, request }) => {
+  const { reference } = await book(page);
+  const link = await emailedLink(request);
+  const invalid = await browser.newPage();
+  await invalid.goto("/booking/access?token=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+  await expect(invalid.getByText(/private link is invalid/i)).toBeVisible();
+  await expect(invalid.getByText(reference)).toHaveCount(0);
+  await invalid.close();
+  const legacy = await browser.newPage();
+  await legacy.goto(link.replace("?token=", "#token="));
+  await expect(legacy.getByRole("button", { name: "Continue to booking" })).toBeVisible();
+  await legacy.getByRole("button", { name: "Continue to booking" }).click();
+  await expect(legacy.getByText(reference)).toBeVisible();
+  await legacy.close();
 });
 
 test("guest payment state is available without an account", async ({ page, request }) => {
@@ -168,7 +211,7 @@ test("a signed-in customer can use guest token access without claiming ownership
   await page.getByRole("link", { name: "View booking" }).click();
   await expect(page).toHaveURL(new RegExp(`/booking/manage\\?id=${id}`));
   await page.goto(`/account/appointments/${id}`);
-  await expect(page.getByText("This page could not be found.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Appointment unavailable" })).toBeVisible();
 });
 
 test("registered customer appointment email returns through login to the owned appointment", async ({ page, browser, request }) => {
@@ -194,6 +237,34 @@ test("registered customer appointment email returns through login to the owned a
   await expect(fresh).toHaveURL(new RegExp(`/account/appointments/${id}`));
   await expect(fresh.getByText(reference)).toBeVisible();
   await fresh.close();
+});
+
+test("registered CTA opens directly for the owner and denies a different signed-in customer", async ({ page, browser, request }) => {
+  await page.goto("/login");
+  await page.getByLabel("Email address").fill("customer@example.test");
+  await page.locator('input[name="password"]').fill("e2e-customer-passphrase");
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page).toHaveURL(/\/account/);
+  const { reference } = await book(page);
+  await expect.poll(async () => (await (await request.get(`${stub}/__e2e/mailbox`)).json()).emails.some((email: { to?: string[] }) => email.to?.includes("customer@example.test")), { timeout: 15_000 }).toBeTruthy();
+  const mailbox = await (await request.get(`${stub}/__e2e/mailbox`)).json();
+  const message = mailbox.emails.find((email: { to?: string[] }) => email.to?.includes("customer@example.test"));
+  const link = String(message.text).match(/http:\/\/127\.0\.0\.1:3100\/auth\/continue\?next=%2Faccount%2Fappointments%2F[0-9a-f-]+/)?.[0];
+  expect(link).toBeTruthy();
+  await page.goto(link!);
+  await expect(page.getByText(reference)).toBeVisible();
+  await expect(page).not.toHaveURL(/\/login/);
+
+  const wrong = await browser.newPage();
+  await wrong.goto("/login");
+  await wrong.getByLabel("Email address").fill("other-customer@example.test");
+  await wrong.locator('input[name="password"]').fill("e2e-other-passphrase");
+  await wrong.getByRole("button", { name: "Sign in" }).click();
+  await expect(wrong).toHaveURL(/\/account/);
+  await wrong.goto(link!);
+  await expect(wrong.getByRole("heading", { name: "Appointment unavailable" })).toBeVisible();
+  await expect(wrong.getByText(reference)).toHaveCount(0);
+  await wrong.close();
 });
 
 test("signed-in booking explains identity, locks verified email, and sign-out returns to guest", async ({ page }) => {

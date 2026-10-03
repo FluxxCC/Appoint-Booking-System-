@@ -33,14 +33,14 @@ describe("transactional email templates", () => {
     const token = "a".repeat(48);
     const email = renderGuestAccessEmail({
       to: "guest@example.test", reference: "AB-5678",
-      bookingUrl: `https://appointments.example.test/booking/access#token=${token}`,
+      bookingUrl: `https://appointments.example.test/booking/access?token=${token}`,
       businessName: "Zentra",
       idempotencyKey: "guest-access-test",
     });
     expect(email.text).toContain("expires in 60 minutes");
     expect(email.text).toContain("Booking reference is AB-5678");
-    expect(email.text).toContain(`#token=${token}`);
-    expect(email.html).toContain("#token=");
+    expect(email.text).toContain(`?token=${token}`);
+    expect(email.html).toContain("?token=");
     expect(email.subject).not.toContain(token);
   });
 

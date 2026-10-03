@@ -84,7 +84,7 @@ test("registered customer can book and see only their own appointment", async ({
   await page.goto(`/account/appointments/${id}`);
   await expect(page.getByRole("heading", { name: "Consultation" })).toBeVisible();
   await page.goto("/account/appointments/dddddddd-dddd-4ddd-8ddd-dddddddddddd");
-  await expect(page.getByText("This page could not be found.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Appointment unavailable" })).toBeVisible();
 });
 
 test("guest retries reuse the request key and do not create another appointment", async ({ page, request }) => {
