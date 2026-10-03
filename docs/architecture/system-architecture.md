@@ -42,6 +42,8 @@ Next.js App Router, React, TypeScript and Tailwind provide the presentation laye
 
 PostgreSQL is the authority for ownership, immutable booking snapshots, appointment transitions and time reservation. Public RPC wrappers use SECURITY INVOKER. Narrow private SECURITY DEFINER functions perform authorized transactional writes; they use an empty search path, qualified identifiers and explicit EXECUTE grants. The private schema must never be exposed through the Data API.
 
+Application data changes use Supabase Realtime Broadcast as a payload-free invalidation signal. Triggers cover the current application-owned tables in `public` and `private`; authenticated subscribers must have an active profile to join the private application channel. Anonymous visitors can receive only the separate public-site signal for catalog, business-hour, policy, announcement and appointment availability changes. Browser clients call `router.refresh()` after a hint, so updated data is fetched again through the existing Server Components, live role/MFA checks, RPCs and RLS policies. Realtime failures do not block database writes; clients refresh when returning to a visible tab and fall back to a 30-second refresh while disconnected. New application tables need the same trigger and public/private classification in their migration. Supabase Auth, Storage and extension-managed system data are not broadcast as application data.
+
 ## Actors and access
 
 | Actor | Scope |
