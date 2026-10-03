@@ -126,7 +126,7 @@ export function createPayMongoProvider(options: ProviderOptions = {}): PaymentPr
           currency: attrs.currency,
         } satisfies VerifiedProviderPayment;
       }
-      return { state: value.data.attributes.status === "expired" ? "CANCELLED" : "PENDING" } as const;
+      return { state: value.data.attributes.status === "expired" ? "EXPIRED" : "PENDING" } as const;
     },
     async verifyWebhook(rawBody: Uint8Array, headers: Headers): Promise<ProviderWebhookResult> {
       const config = secretKey();

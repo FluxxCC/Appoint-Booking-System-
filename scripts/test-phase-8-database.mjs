@@ -204,6 +204,18 @@ try {
   equal('automatic deposit has immediate deadline',await scalar('select payment_due_at is not null and accepted_at is not null from public.appointments where id=$1',[autoDeposit]),true);
   equal('automatic full has immediate deadline',await scalar('select payment_due_at is not null and accepted_at is not null from public.appointments where id=$1',[autoFull]),true);
   await actor('service_role');
+  const expiredAttempt=await json('select public.prepare_payment_attempt($1,$2,null,\'paymongo\',$3)',[autoFull,ids.customerOne,randomUUID()]);
+  await scalar("select public.attach_payment_checkout($1,'cs_expired123','https://checkout.paymongo.com/cs_expired123')",[expiredAttempt.payment_id]);
+  await actor('anon');
+  await denied('anonymous cannot expire a provider checkout attempt','select public.expire_paymongo_checkout_attempt($1,$2)',[expiredAttempt.payment_id,'cs_expired123'],/permission denied/);
+  await actor('authenticated',ids.customerOne);
+  await denied('customer cannot expire a provider checkout attempt','select public.expire_paymongo_checkout_attempt($1,$2)',[expiredAttempt.payment_id,'cs_expired123'],/permission denied/);
+  await actor('service_role');
+  equal('PayMongo-confirmed checkout expiry cancels the old attempt',await scalar('select public.expire_paymongo_checkout_attempt($1,$2)',[expiredAttempt.payment_id,'cs_expired123']),'CANCELLED');
+  equal('repeated expiry reconciliation is idempotent',await scalar('select public.expire_paymongo_checkout_attempt($1,$2)',[expiredAttempt.payment_id,'cs_expired123']),'CANCELLED');
+  const retriedAttempt=await json('select public.prepare_payment_attempt($1,$2,null,\'paymongo\',$3)',[autoFull,ids.customerOne,randomUUID()]);
+  equal('expired checkout can be replaced by a fresh attempt',retriedAttempt.payment_id!==expiredAttempt.payment_id,true);
+  equal('fresh retry has no stale provider reference',retriedAttempt.provider_reference,null);
   const firstAttemptData=await json('select public.prepare_payment_attempt($1,$2,null,$3,$4)',[autoDeposit,ids.customerOne,'test-provider',randomUUID()]);
   equal('registered customer checkout amount comes from appointment snapshot',firstAttemptData.amount_minor,1500);
   equal('registered customer checkout currency comes from appointment snapshot',firstAttemptData.currency,'USD');
@@ -253,6 +265,7 @@ try {
   await actor('anon');
   await denied('anonymous cannot call payment preparation','select public.prepare_payment_attempt($1,null,$2,$3,$4)',[guestAppointment,guestTokenHash,'test-provider',randomUUID()],/permission denied/);
   await denied('anonymous cannot attach provider checkout','select public.attach_payment_checkout($1,$2,$3)',[guestAttempt.payment_id,'ref','https://checkout.example.test/session'],/permission denied/);
+  await denied('anonymous cannot mark a PayMongo checkout expired','select public.expire_paymongo_checkout_attempt($1,$2)',[guestAttempt.payment_id,'cs_guest123'],/permission denied/);
   await denied('anonymous cannot call acceptance','select public.accept_appointment($1)',[autoCash],/permission denied/);
   await denied('anonymous cannot call expiration','select public.expire_due_payments()',[],/permission denied/);
   await denied('anonymous cannot claim a scoped outbox message','select * from public.claim_notification_outbox_by_key($1)',[pendingEventKey],/permission denied/);

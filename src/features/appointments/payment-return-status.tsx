@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 
-type Status = "checking" | "paid" | "review" | "pending" | "unavailable";
+type Status = "checking" | "paid" | "review" | "pending" | "expired" | "unavailable";
 
 export function PaymentReturnStatus({ appointmentId, bookingHref, initialStatus, cancelled, reference, service, staff, reservedAt, amount }: {
   appointmentId: string;
@@ -29,7 +29,7 @@ export function PaymentReturnStatus({ appointmentId, bookingHref, initialStatus,
         signal,
       });
       const body = await response.json() as { status?: Status };
-      if (!response.ok || !body.status || !["paid", "review", "pending", "unavailable"].includes(body.status)) {
+      if (!response.ok || !body.status || !["paid", "review", "pending", "expired", "unavailable"].includes(body.status)) {
         if (!signal.aborted) setStatus("unavailable");
         return "unavailable" as Status;
       }
@@ -72,6 +72,11 @@ export function PaymentReturnStatus({ appointmentId, bookingHref, initialStatus,
       <p className="eyebrow">Payment verified</p>
       <h2 className="mt-2 display-type text-3xl">Payment received — booking needs review</h2>
       <p className="mt-3 leading-7">PayMongo verified the payment, but the appointment is not currently reserved. Contact the business with reference <strong>{reference}</strong> so the team can review it.</p>
+    </> : status === "expired" ? <>
+      <p className="eyebrow">Checkout expired</p>
+      <h2 className="mt-2 display-type text-3xl">Payment session expired</h2>
+      <p className="mt-3 leading-7">PayMongo reports that this checkout session expired without a verified payment. If your appointment payment window is still open, return to your booking to start a new checkout. If you completed payment, check again so we can reconcile PayMongo’s latest status.</p>
+      <button type="button" onClick={() => { setStatus("checking"); setRetry(value => value + 1); }} className="button-secondary mt-5">Check payment again</button>
     </> : <>
       <p className="eyebrow">Secure payment</p>
       <h2 className="mt-2 display-type text-3xl">{status === "checking" ? "Checking payment status" : status === "unavailable" ? "We could not check yet" : cancelled ? "No payment confirmed yet" : "Payment is still being verified"}</h2>
@@ -82,6 +87,6 @@ export function PaymentReturnStatus({ appointmentId, bookingHref, initialStatus,
           : "We are checking PayMongo's verified payment status. Your appointment will show as reserved only after payment confirmation."}</p>
       <button type="button" onClick={() => { setStatus("checking"); setRetry(value => value + 1); }} className="button-secondary mt-5">Check payment again</button>
     </>}
-    <div className="mt-6 flex flex-wrap gap-4"><Link href={bookingHref} className="button-primary">View booking</Link><Link href="/refund-policy" className="self-center text-sm font-semibold text-accent-dark underline">Refund policy</Link></div>
+    <div className="mt-6 flex flex-wrap gap-4"><Link href={bookingHref} className="button-primary">{status === "expired" ? "Return to booking and try again" : "View booking"}</Link><Link href="/refund-policy" className="self-center text-sm font-semibold text-accent-dark underline">Refund policy</Link></div>
   </section>;
 }

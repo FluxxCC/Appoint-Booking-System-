@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
-type Status = "paid" | "review" | "pending" | "unavailable";
+type Status = "paid" | "review" | "pending" | "expired" | "unavailable";
 
 export function PaymentStatusCheck({ appointmentId }: { appointmentId: string }) {
   const router = useRouter();
@@ -21,7 +21,7 @@ export function PaymentStatusCheck({ appointmentId }: { appointmentId: string })
         cache: "no-store",
       });
       const body = await response.json() as { status?: Status };
-      const next = response.ok && body.status && ["paid", "review", "pending", "unavailable"].includes(body.status)
+      const next = response.ok && body.status && ["paid", "review", "pending", "expired", "unavailable"].includes(body.status)
         ? body.status : "unavailable";
       setStatus(next);
       if (next === "paid") router.refresh();
@@ -44,6 +44,8 @@ export function PaymentStatusCheck({ appointmentId }: { appointmentId: string })
       ? "PayMongo verified a payment, but this booking needs business review. Contact the business before assuming the appointment is reserved."
       : status === "pending"
         ? "No completed payment is verified yet. If you just paid, wait a moment and check again."
+        : status === "expired"
+          ? "The previous PayMongo checkout expired. If your payment window is still open, start a new checkout above."
         : status === "unavailable"
           ? "Payment status could not be checked right now. Your booking has not been marked paid. Try again or contact the business."
           : status === "checking"

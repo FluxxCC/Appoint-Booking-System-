@@ -84,6 +84,17 @@ describe("PayMongo Hosted Checkout", () => {
     expect(JSON.parse(String(init?.body)).data.attributes.line_items[0].amount).toBe(19_500);
   });
 
+  it("reports an expired hosted checkout as a distinct terminal status", async () => {
+    process.env.NEXT_PUBLIC_SITE_URL = "https://appointments.example.test";
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
+      data: { id: "cs_expired123", attributes: { checkout_url: "https://checkout.paymongo.com/cs_expired123", livemode: false, status: "expired", payments: [] } },
+    }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    const provider = createPayMongoProvider({ apiKey: "sk_test_unit-value", fetcher, nodeEnvironment: "development" });
+
+    await expect(provider.getPaymentStatus("cs_expired123")).resolves.toEqual({ state: "EXPIRED" });
+    expect(fetcher.mock.calls[0][0]).toBe("https://api.paymongo.com/v2/checkout_sessions/cs_expired123");
+  });
+
   it("rejects live keys outside production and never makes a provider request", async () => {
     const fetcher = vi.fn<typeof fetch>();
     const provider = createPayMongoProvider({ apiKey: "sk_live_unit-value", fetcher, nodeEnvironment: "development" });

@@ -23,7 +23,7 @@ export interface PaymentProvider {
   /** Stable server-side provider identifier; never supplied by a browser. */
   readonly id: string;
   createCheckout(request: AcceptedPaymentRequest): Promise<{ reference: string; url: string }>;
-  getPaymentStatus(reference: string): Promise<VerifiedProviderPayment | { state: "PENDING" | "FAILED" | "CANCELLED" }>;
+  getPaymentStatus(reference: string): Promise<VerifiedProviderPayment | { state: "PENDING" | "FAILED" | "CANCELLED" | "EXPIRED" }>;
   /** Verify authenticity against the original request bytes before returning normalized facts. */
   verifyWebhook(rawBody: Uint8Array, headers: Headers): Promise<ProviderWebhookResult>;
   refundPayment(request: {

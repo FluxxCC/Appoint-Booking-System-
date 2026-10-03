@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   createPayMongoProvider: vi.fn(),
   isPayMongoConfigured: vi.fn(),
   settlePayMongoPayment: vi.fn(),
+  expirePayMongoCheckoutAttempt: vi.fn(),
   consumeRateLimit: vi.fn(),
   trustedClientIdentifier: vi.fn(),
   paymentQuery: { select: vi.fn(), eq: vi.fn(), order: vi.fn(), limit: vi.fn(), maybeSingle: vi.fn() },
@@ -40,10 +41,11 @@ beforeEach(() => {
   mocks.paymentQuery.order.mockReturnValue(mocks.paymentQuery);
   mocks.paymentQuery.limit.mockReturnValue(mocks.paymentQuery);
   mocks.paymentQuery.maybeSingle.mockResolvedValue({ data: { id: "payment-id", state: "PENDING", provider_reference: "cs_test123", exception_reason: null }, error: null });
-  mocks.createPrivilegedClient.mockReturnValue({ from: vi.fn(() => mocks.paymentQuery) });
+  mocks.createPrivilegedClient.mockReturnValue({ from: vi.fn(() => mocks.paymentQuery), rpc: mocks.expirePayMongoCheckoutAttempt });
   mocks.createPayMongoProvider.mockReturnValue({ getPaymentStatus: vi.fn().mockResolvedValue(providerFacts) });
   mocks.isPayMongoConfigured.mockReturnValue(true);
   mocks.settlePayMongoPayment.mockResolvedValue("CONFIRMED");
+  mocks.expirePayMongoCheckoutAttempt.mockResolvedValue({ data: "CANCELLED", error: null });
   mocks.consumeRateLimit.mockResolvedValue({ allowed: true, retryAfterSeconds: 1 });
 });
 
@@ -65,6 +67,45 @@ describe("authorized payment status verification", () => {
 
     expect(await response.json()).toEqual({ status: "pending" });
     expect(mocks.settlePayMongoPayment).not.toHaveBeenCalled();
+  });
+
+  it("marks a provider-confirmed expired session cancelled and allows the UI to offer a retry", async () => {
+    mocks.createPayMongoProvider.mockReturnValue({ getPaymentStatus: vi.fn().mockResolvedValue({ state: "EXPIRED" }) });
+
+    const response = await verifyRoute.POST(request());
+
+    expect(await response.json()).toEqual({ status: "expired" });
+    expect(mocks.expirePayMongoCheckoutAttempt).toHaveBeenCalledWith("expire_paymongo_checkout_attempt", {
+      p_payment: "payment-id",
+      p_reference: "cs_test123",
+    });
+    expect(mocks.settlePayMongoPayment).not.toHaveBeenCalled();
+  });
+
+  it("reports a webhook that wins the expiry race as paid", async () => {
+    mocks.createPayMongoProvider.mockReturnValue({ getPaymentStatus: vi.fn().mockResolvedValue({ state: "EXPIRED" }) });
+    mocks.expirePayMongoCheckoutAttempt.mockResolvedValue({ data: "SUCCEEDED", error: null });
+    mocks.paymentQuery.maybeSingle
+      .mockResolvedValueOnce({ data: { id: "payment-id", state: "PENDING", provider_reference: "cs_test123", exception_reason: null }, error: null })
+      .mockResolvedValueOnce({ data: { state: "SUCCEEDED", exception_reason: null }, error: null });
+    mocks.readPaymentReturnBooking
+      .mockResolvedValueOnce({ id: appointmentId, state: "AWAITING_PAYMENT" })
+      .mockResolvedValueOnce({ id: appointmentId, state: "CONFIRMED" });
+
+    const response = await verifyRoute.POST(request());
+
+    expect(await response.json()).toEqual({ status: "paid" });
+    expect(mocks.settlePayMongoPayment).not.toHaveBeenCalled();
+  });
+
+  it("rechecks an expired session so a late verified payment can still reconcile", async () => {
+    mocks.paymentQuery.maybeSingle.mockResolvedValue({ data: { id: "payment-id", state: "CANCELLED", provider_reference: "cs_test123", exception_reason: null }, error: null });
+
+    const response = await verifyRoute.POST(request());
+
+    expect(await response.json()).toEqual({ status: "paid" });
+    expect(mocks.createPayMongoProvider).toHaveBeenCalledOnce();
+    expect(mocks.settlePayMongoPayment).toHaveBeenCalledWith(providerFacts);
   });
 
   it("does not reveal or inspect an appointment without its authenticated owner or guest session", async () => {

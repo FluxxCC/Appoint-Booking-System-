@@ -1038,6 +1038,7 @@ prepare_payment_attempt: { Args: { p_appointment: string | null; p_auth_user: st
 issue_guest_access_link: { Args: { p_email: string | null; p_reference?: string | null; p_appointment?: string | null }; Returns: Json };
 exchange_guest_access_link: { Args: { p_token_hash: string | null }; Returns: Json };
 attach_payment_checkout: { Args: { p_payment: string | null; p_reference: string | null; p_checkout_url: string | null }; Returns: Json };
+expire_paymongo_checkout_attempt: { Args: { p_payment: string | null; p_reference: string | null }; Returns: Database["public"]["Enums"]["payment_state"] };
 claim_notification_outbox: { Args: { p_limit?: number | null }; Returns: Database["public"]["Tables"]["notification_outbox"]["Row"][] };
 claim_notification_outbox_by_key: { Args: { p_key: string }; Returns: Database["public"]["Tables"]["notification_outbox"]["Row"][] };
 notification_lifecycle_current: { Args: { p_outbox_id: string }; Returns: boolean };

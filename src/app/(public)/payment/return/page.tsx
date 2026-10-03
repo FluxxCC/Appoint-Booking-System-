@@ -20,7 +20,7 @@ export default async function PaymentReturnPage({ searchParams }: { searchParams
 
   const initialStatus = booking.paymentStatus === "SUCCEEDED"
     ? booking.paymentException || booking.state !== "CONFIRMED" ? "review" : "paid"
-    : "checking";
+    : booking.paymentStatus === "CANCELLED" ? "expired" : "checking";
   const bookingHref = booking.accessKind === "guest"
     ? `/booking/manage?id=${encodeURIComponent(booking.id)}`
     : `/account/appointments/${encodeURIComponent(booking.id)}`;

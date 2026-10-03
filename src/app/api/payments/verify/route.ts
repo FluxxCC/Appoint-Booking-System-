@@ -10,7 +10,7 @@ import { settlePayMongoPayment } from "@/lib/payments/paymongo-settlement.server
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-type PublicPaymentStatus = "paid" | "review" | "pending" | "unavailable";
+type PublicPaymentStatus = "paid" | "review" | "pending" | "expired" | "unavailable";
 
 function json(status: PublicPaymentStatus, httpStatus = 200) {
   return Response.json({ status }, { status: httpStatus, headers: { "Cache-Control": "no-store, max-age=0" } });
@@ -51,11 +51,31 @@ export async function POST(request: Request) {
     if (payment.state === "SUCCEEDED") {
       return json(payment.exception_reason || booking.state !== "CONFIRMED" ? "review" : "paid");
     }
-    if (payment.state !== "PENDING" || !payment.provider_reference) return json("pending");
-    if (!isPayMongoConfigured()) return json("unavailable", 503);
+    const alreadyExpired = payment.state === "CANCELLED";
+    if (payment.state !== "PENDING" && !alreadyExpired) return json("pending");
+    if (!payment.provider_reference) return json(alreadyExpired ? "expired" : "pending");
+    if (!isPayMongoConfigured()) return json(alreadyExpired ? "expired" : "unavailable", alreadyExpired ? 200 : 503);
 
     const providerResult = await createPayMongoProvider().getPaymentStatus(payment.provider_reference);
-    if ("state" in providerResult) return json("pending");
+    if ("state" in providerResult) {
+      if (providerResult.state !== "EXPIRED") return json(alreadyExpired ? "expired" : "pending");
+      const { data: terminalState, error: expireError } = await privileged.rpc("expire_paymongo_checkout_attempt", {
+        p_payment: payment.id,
+        p_reference: payment.provider_reference,
+      });
+      if (expireError || !terminalState) return json("unavailable", 503);
+      if (terminalState === "CANCELLED") return json("expired");
+      if (terminalState !== "SUCCEEDED") return json("pending");
+
+      const [{ data: currentPayment, error: currentPaymentError }, currentBooking] = await Promise.all([
+        privileged.from("payments").select("state,exception_reason").eq("id", payment.id).maybeSingle(),
+        readPaymentReturnBooking(booking.id),
+      ]);
+      if (currentPaymentError || !currentPayment || currentPayment.state !== "SUCCEEDED" || !currentBooking) {
+        return json("unavailable", 503);
+      }
+      return json(currentPayment.exception_reason || currentBooking.state !== "CONFIRMED" ? "review" : "paid");
+    }
     const settlement = await settlePayMongoPayment(providerResult);
     if (settlement === "CONFIRMED") return json("paid");
     if (settlement === "LATE_PAYMENT_REVIEW") return json("review");
