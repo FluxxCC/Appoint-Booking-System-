@@ -19,7 +19,7 @@ export async function readAdmin(section: "dashboard"|"settings"|"closures"|"anno
     const appointmentIds = [...new Set(payments.flatMap((payment) => payment.appointment_id ? [payment.appointment_id] : []))];
     const [{ data: references, error: referenceError }, { data: appointments, error: appointmentError }] = await Promise.all([
       supabase.from("payments").select("id,provider_reference").in("id", paymentIds),
-      supabase.from("appointments").select("id,public_reference,customer_id").in("id", appointmentIds),
+      supabase.from("appointments").select("id,public_reference,customer_id,state").in("id", appointmentIds),
     ]);
     if (referenceError || appointmentError) throw new Error("Payment references could not be loaded. Please try again.");
     const customerIds = [...new Set((appointments ?? []).map((appointment) => appointment.customer_id))];
@@ -37,6 +37,7 @@ export async function readAdmin(section: "dashboard"|"settings"|"closures"|"anno
         ...payment,
         provider_reference: referenceByPayment.get(payment.id) ?? null,
         public_reference: appointment?.public_reference,
+        appointment_state: appointment?.state,
         customer_kind: customer?.auth_user_id ? "Customer" : "Guest",
       };
     });

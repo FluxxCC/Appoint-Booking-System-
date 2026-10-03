@@ -101,3 +101,21 @@ test("auto confirmation acquires the slot during submission", async ({ page, req
   await page.goto(`/booking/manage?id=${id}`);
   await expect(page.getByRole("heading",{name:"Payment required"})).toBeVisible();
 });
+
+test("expired payment is visible to owner and guest without another checkout", async ({ page, browser, request }) => {
+  await scenario(request, "AUTO_CONFIRM");
+  const id = await bookAsGuest(page);
+  await expect(page.getByRole("heading", { name: "Payment required" })).toBeVisible();
+  expect((await request.post(`${stub}/__e2e/expire`, { data: { appointmentId: id } })).ok()).toBe(true);
+  await page.goto(`/booking/manage?id=${id}`);
+  await expect(page.getByText("Payment window expired; time released")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Pay online" })).toHaveCount(0);
+  const owner = await actorPage(browser, "owner@example.test", "e2e-owner-passphrase");
+  await owner.page.goto("/admin/appointments?status=PAYMENT_EXPIRED");
+  await expect(owner.page.getByRole("table").getByText("Payment Expired")).toBeVisible();
+  await owner.page.goto(`/admin/appointments/${id}`);
+  await expect(owner.page.getByText("Payment window expired").first()).toBeVisible();
+  await expect(owner.page.getByText("Payment deadline", { exact: true })).toBeVisible();
+  await expect(owner.page.getByText("Payment expired", { exact: true })).toBeVisible();
+  await owner.context.close();
+});

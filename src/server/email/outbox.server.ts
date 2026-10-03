@@ -13,7 +13,7 @@ import type { EmailDeliveryResult } from "./types";
 
 type OutboxRow = Database["public"]["Tables"]["notification_outbox"]["Row"];
 type AppointmentRow = Database["public"]["Tables"]["appointments"]["Row"];
-type FailureCode = Exclude<EmailDeliveryResult, { ok: true }>["code"] | "no_recipient" | "unsupported_event";
+type FailureCode = Exclude<EmailDeliveryResult, { ok: true }>["code"] | "no_recipient" | "unsupported_event" | "superseded";
 
 class DeliveryFailure extends Error {
   constructor(readonly code: FailureCode, readonly retryable: boolean) { super(code); }
@@ -159,6 +159,9 @@ async function deliverStateChanged(job: OutboxRow) {
   }
   const kind = appointmentEmailKind(state, verifiedPayment);
   if (!kind) return;
+  const { data: current, error: currentError } = await client.rpc("notification_lifecycle_current", { p_outbox_id: job.id });
+  if (currentError) throw new DeliveryFailure("provider_error", true);
+  if (current !== true) throw new DeliveryFailure("superseded", false);
   const context = await appointmentEmailData(client, job.appointment_id);
 
   const recipient = await customerRecipient(client, context.customer);
@@ -282,19 +285,22 @@ async function processJob(client: ReturnType<typeof createPrivilegedClient>, job
   } catch (error) {
     const failure = error instanceof DeliveryFailure ? error : new DeliveryFailure("network_error", true);
     try {
-      await client.rpc("finish_notification_outbox", {
+      const { data, error: finishError } = await client.rpc("finish_notification_outbox", {
         p_id: job.id, p_success: false, p_retryable: failure.retryable,
         p_error_code: failure.code,
       });
-    } catch { /* A later lease will recover an unacknowledged job. */ }
-    return failure.retryable ? "retrying" as const : "failed" as const;
+      if (finishError || data !== true) return "retrying" as const;
+    } catch { return "retrying" as const; /* A later lease recovers the job. */ }
+    return failure.code === "superseded" ? "skipped" as const : failure.retryable ? "retrying" as const : "failed" as const;
   }
 }
 
 /** Claims the existing DB outbox and performs provider delivery after commit. */
-export async function dispatchNotificationOutbox(batchSize = 20) {
+export async function dispatchNotificationOutbox(batchSize = 20, deduplicationKey?: string) {
   const client = createPrivilegedClient();
-  const { data, error } = await client.rpc("claim_notification_outbox", { p_limit: Math.min(Math.max(batchSize, 1), 50) });
+  const { data, error } = deduplicationKey
+    ? await client.rpc("claim_notification_outbox_by_key", { p_key: deduplicationKey })
+    : await client.rpc("claim_notification_outbox", { p_limit: Math.min(Math.max(batchSize, 1), 50) });
   if (error || data === null) throw new Error("Notification delivery is temporarily unavailable.");
   let claimed: unknown = data;
   if (typeof claimed === "string") {
@@ -304,7 +310,7 @@ export async function dispatchNotificationOutbox(batchSize = 20) {
     typeof (row as { id?: unknown }).id === "string" && typeof (row as { kind?: unknown }).kind === "string")
     ? claimed as OutboxRow[] : null;
   if (!jobs) throw new Error("Notification delivery is temporarily unavailable.");
-  let delivered = 0, retrying = 0, failed = 0;
+  let delivered = 0, retrying = 0, failed = 0, skipped = 0;
   // Keep provider pressure bounded while avoiding serial max-duration calls.
   for (let index = 0; index < jobs.length; index += 5) {
     const group = jobs.slice(index, index + 5);
@@ -312,6 +318,7 @@ export async function dispatchNotificationOutbox(batchSize = 20) {
     delivered += results.filter(value => value === "delivered").length;
     retrying += results.filter(value => value === "retrying").length;
     failed += results.filter(value => value === "failed").length;
+    skipped += results.filter(value => value === "skipped").length;
   }
-  return { claimed: jobs.length, delivered, retrying, failed };
+  return { claimed: jobs.length, delivered, retrying, failed, skipped };
 }

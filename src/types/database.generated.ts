@@ -1036,10 +1036,13 @@ issue_guest_access_link: { Args: { p_email: string | null; p_reference?: string 
 exchange_guest_access_link: { Args: { p_token_hash: string | null }; Returns: Json };
 attach_payment_checkout: { Args: { p_payment: string | null; p_reference: string | null; p_checkout_url: string | null }; Returns: Json };
 claim_notification_outbox: { Args: { p_limit?: number | null }; Returns: Database["public"]["Tables"]["notification_outbox"]["Row"][] };
+claim_notification_outbox_by_key: { Args: { p_key: string }; Returns: Database["public"]["Tables"]["notification_outbox"]["Row"][] };
+notification_lifecycle_current: { Args: { p_outbox_id: string }; Returns: boolean };
 finish_notification_outbox: { Args: { p_id: string | null; p_success: boolean | null; p_retryable?: boolean | null; p_error_code?: string | null }; Returns: boolean };
 record_notification_delivery: { Args: { p_outbox_id: string | null; p_idempotency_key: string | null; p_recipient_role: string | null; p_provider_message_id: string | null }; Returns: boolean };
 enqueue_guest_access_notification: { Args: { p_email: string | null; p_reference: string | null; p_request_id: string | null }; Returns: boolean };
 owner_notification_outbox: { Args: { p_limit?: number | null }; Returns: { id: string; kind: string; state: Database["public"]["Enums"]["job_state"]; attempts: number; created_at: string; last_attempt_at: string | null; available_at: string; locked_until: string | null; last_error: string | null; delivered_at: string | null; provider_receipts: Json }[] };
+owner_notification_outbox_context: { Args: { p_limit?: number | null }; Returns: { id: string; kind: string; state: Database["public"]["Enums"]["job_state"]; attempts: number; created_at: string; last_attempt_at: string | null; available_at: string; locked_until: string | null; last_error: string | null; delivered_at: string | null; public_reference: string | null; appointment_state: Database["public"]["Enums"]["appointment_state"] | null; event_state: Database["public"]["Enums"]["appointment_state"] | null; provider_receipts: Json }[] };
 }; Enums: {
 app_role: "OWNER" | "ADMIN" | "STAFF";
 appointment_state: "PENDING" | "DECLINED" | "ACCEPTED" | "AWAITING_PAYMENT" | "PAYMENT_EXPIRED" | "CONFIRMED" | "CHECKED_IN" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED" | "NO_SHOW";

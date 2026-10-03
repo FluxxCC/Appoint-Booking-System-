@@ -51,6 +51,20 @@ const server = createServer(async (request, response) => {
     const next = await body(request); state.guest = next.guest ?? true; state.registration = next.registration ?? true; state.availability = next.availability ?? "normal"; state.approvalMode=next.approvalMode??"ADMIN_APPROVAL";
     if (next.failOutboxClaim !== undefined) state.failOutboxClaim = next.failOutboxClaim;
     if (next.reset) { state.appointments.clear(); state.requests.clear(); state.tokens.clear(); state.exchanges.clear(); state.events.clear(); state.outbox.length = 0; state.receipts.length = 0; state.emails.length = 0; state.outboxDispatches = 0; state.failOutboxClaim = next.failOutboxClaim ?? false; }
+    if (next.seedUnrelatedOutbox) {
+      const eventId=randomUUID();
+      addOutbox({ id: otherAppointmentId }, "APPOINTMENT_STATE_CHANGED", eventId);
+    }
+    return send(response, 200, { ok: true });
+  }
+  if (url.pathname === "/__e2e/expire" && request.method === "POST") {
+    const { appointmentId } = await body(request);
+    const appointment = state.appointments.get(appointmentId);
+    if (!appointment || appointment.state !== "AWAITING_PAYMENT") return send(response, 400, { message: "Not awaiting payment" });
+    appointment.state = "PAYMENT_EXPIRED";
+    appointment.payment_expired_at = new Date().toISOString();
+    const eventId=randomUUID(); state.events.set(eventId,{id:eventId,appointment_id:appointment.id,from_state:"AWAITING_PAYMENT",to_state:"PAYMENT_EXPIRED",created_at:appointment.payment_expired_at,reason:null});
+    addOutbox(appointment,"APPOINTMENT_STATE_CHANGED",eventId);
     return send(response, 200, { ok: true });
   }
   if (url.pathname === "/__e2e/stats") return send(response, 200, { appointments: state.appointments.size, requestKeys: state.requests.size, outboxDispatches: state.outboxDispatches, outbox: state.outbox.map(job => ({ state: job.state, attempts: job.attempts, last_error: job.last_error })), receipts: state.receipts.length });
@@ -73,13 +87,19 @@ const server = createServer(async (request, response) => {
   }
   if (url.pathname.startsWith("/rest/v1/rpc/")) {
     const name = url.pathname.split("/").at(-1), args = await body(request);
-    if (name === "claim_notification_outbox") {
+    if (name === "claim_notification_outbox" || name === "claim_notification_outbox_by_key") {
       state.outboxDispatches += 1;
       if (state.failOutboxClaim) return send(response, 503, { message: "test outbox failure" });
       const now = Date.now();
-      const jobs = state.outbox.filter(job => (job.state === "PENDING" && job.available_at <= now) || (job.state === "PROCESSING" && job.locked_until <= now)).slice(0, Math.min(Number(args.p_limit) || 25, 50));
+      const jobs = state.outbox.filter(job => (!args.p_key || job.deduplication_key === args.p_key) && ((job.state === "PENDING" && job.available_at <= now) || (job.state === "PROCESSING" && job.locked_until <= now))).slice(0, name === "claim_notification_outbox_by_key" ? 1 : Math.min(Number(args.p_limit) || 25, 50));
       for (const job of jobs) { job.state = "PROCESSING"; job.attempts += 1; job.locked_until = now + 120_000; job.last_attempt_at = now; }
       return send(response, 200, jobs);
+    }
+    if (name === "notification_lifecycle_current") {
+      const job = state.outbox.find(row => row.id === args.p_outbox_id);
+      const event = job ? state.events.get(job.deduplication_key) : null;
+      const appointment = job ? state.appointments.get(job.appointment_id) : null;
+      return send(response, 200, Boolean(job && event && appointment && event.to_state === appointment.state && (event.to_state !== "AWAITING_PAYMENT" || Date.parse(appointment.payment_due_at) > Date.now())));
     }
     if (name === "finish_notification_outbox") {
       const job = state.outbox.find(row => row.id === args.p_id);
@@ -92,6 +112,15 @@ const server = createServer(async (request, response) => {
     if (name === "record_notification_delivery") {
       state.receipts.push({ outbox_id: args.p_outbox_id, role: args.p_recipient_role, provider_message_id: args.p_provider_message_id });
       return send(response, 200, true);
+    }
+    if (name === "owner_notification_outbox_context") {
+      if (!tokenUser(request)?.roles.includes("OWNER")) return send(response, 403, { message: "Not authorized" });
+      return send(response, 200, state.outbox.map(job => {
+        const appointment = state.appointments.get(job.appointment_id);
+        const event = state.events.get(job.deduplication_key);
+        return { ...job, public_reference: appointment?.public_reference ?? null, appointment_state: appointment?.state ?? null, event_state: event?.to_state ?? null,
+          provider_receipts: state.receipts.filter(receipt => receipt.outbox_id === job.id).map(receipt => ({ role: receipt.role, message_id: receipt.provider_message_id, accepted_at: new Date().toISOString() })) };
+      }));
     }
     if (name === "enqueue_guest_access_notification") {
       const appointment = [...state.appointments.values()].find(a => a.customer_email?.toLowerCase() === String(args.p_email ?? "").toLowerCase() && a.public_reference === args.p_reference);
@@ -143,7 +172,7 @@ const server = createServer(async (request, response) => {
       if(!tokenUser(request)?.roles.includes("OWNER"))return send(response,403,{message:"Not authorized"});
       const rows=[...state.appointments.values()].map(a=>({...a,customer_name:a.customer_name,staff_name:staff.display_name,service_name:service.name,collected_amount:"0"}));
       const selected=args.p_section==="appointment"?rows.filter(a=>a.id===args.p_id):rows.filter(a=>!args.p_status||a.state===args.p_status);
-      return send(response,200,{business:{...business,booking_approval_mode:state.approvalMode},date:new Date().toISOString().slice(0,10),page:1,total:selected.length,appointments:selected,pending:rows.filter(a=>a.state==="PENDING"),hours:[],payments:[],events:[],stats:{today:0,pending:rows.filter(a=>a.state==="PENDING").length,confirmed:0,completed:0,no_show:0,upcoming:0}});
+      return send(response,200,{business:{...business,booking_approval_mode:state.approvalMode},date:new Date().toISOString().slice(0,10),page:1,total:selected.length,appointments:selected,pending:rows.filter(a=>a.state==="PENDING"),hours:[],payments:[],events:[...state.events.values()].filter(e=>e.appointment_id===args.p_id),stats:{today:rows.filter(a=>["AWAITING_PAYMENT","CONFIRMED","CHECKED_IN","IN_PROGRESS"].includes(a.state)).length,pending:rows.filter(a=>a.state==="PENDING").length,payment_expired:rows.filter(a=>a.state==="PAYMENT_EXPIRED").length,confirmed:rows.filter(a=>a.state==="CONFIRMED").length,completed:0,no_show:0,upcoming:rows.filter(a=>["AWAITING_PAYMENT","CONFIRMED","CHECKED_IN","IN_PROGRESS"].includes(a.state)).length}});
     }
     if(name==="catalog_data") {
       if(!tokenUser(request)?.roles.includes("OWNER"))return send(response,403,{message:"Not authorized"});
@@ -173,9 +202,10 @@ const server = createServer(async (request, response) => {
         if(a.state!=="PENDING")return send(response,200,a.state);
         if([...state.appointments.values()].some(other=>other.id!==a.id&&other.starts_at===a.starts_at&&["CONFIRMED","AWAITING_PAYMENT"].includes(other.state)))return send(response,409,{message:"This time is no longer available"});
         a.state=a.payment_mode_snapshot==="PAY_AT_BUSINESS"?"CONFIRMED":"AWAITING_PAYMENT";a.payment_due_at=a.state==="AWAITING_PAYMENT"?new Date(Date.now()+30*60_000).toISOString():null;
+        const eventId=randomUUID(); state.events.set(eventId,{id:eventId,appointment_id:a.id,to_state:a.state,reason:null}); addOutbox(a,"APPOINTMENT_STATE_CHANGED",eventId);
         return send(response,200,a.state);
       }
-      if(args.p_target==="DECLINED"&&a.state==="PENDING"&&String(args.p_reason??"").length>=10){a.state="DECLINED";a.decline_reason=args.p_reason;return send(response,200,a.state)}
+      if(args.p_target==="DECLINED"&&a.state==="PENDING"&&String(args.p_reason??"").length>=10){a.state="DECLINED";a.decline_reason=args.p_reason;const eventId=randomUUID();state.events.set(eventId,{id:eventId,appointment_id:a.id,to_state:a.state,reason:a.decline_reason});addOutbox(a,"APPOINTMENT_STATE_CHANGED",eventId);return send(response,200,a.state)}
       return send(response,400,{message:"Invalid transition"});
     }
     return send(response, 404, { message: `Unhandled test RPC ${name}` });
@@ -192,7 +222,7 @@ const server = createServer(async (request, response) => {
     else if (table === "staff" && filterMatches(idFilter,staffId)) rows = [{ id: staffId, display_name: staff.display_name, auth_user_id: staffUserId, active: true }];
     else if (table === "customers") { const appointment=[...state.appointments.values()].find(x=>filterMatches(idFilter,x.customer_id)); if(appointment && request.headers.apikey === "e2e-test-server-only-secret") rows=[{ id: appointment.customer_id, display_name: appointment.customer_name, email: appointment.customer_email, auth_user_id: appointment.customer_id===customerId?customerId:null, phone: null }]; else if(registered) rows = [{ id: customerId, display_name: "E2E Customer", email: customerEmail, phone: null, auth_user_id: customerId }]; }
     else if (table === "business_settings") rows = [{ name: business.name, timezone: "UTC",booking_approval_mode:state.approvalMode }];
-    else if (table === "appointment_events" && id) rows = state.events.has(id) ? [state.events.get(id)] : [];
+    else if (table === "appointment_events") {const scoped=url.searchParams.get("appointment_id")?.replace(/^eq\./,"");const toState=url.searchParams.get("to_state")?.replace(/^eq\./,"");rows=id?(state.events.has(id)?[state.events.get(id)]:[]):[...state.events.values()].filter(e=>(!scoped||e.appointment_id===scoped)&&(!toState||e.to_state===toState));}
     else if (table === "user_roles") rows = [{ auth_user_id: ownerId, role: "OWNER" }];
     else if (table === "profiles") { const authId=url.searchParams.get("auth_user_id")?.replace(/^eq\./, ""); rows = authId ? [{ auth_user_id: authId, disabled_at: null }] : []; }
     else if (table === "payments") rows = [];

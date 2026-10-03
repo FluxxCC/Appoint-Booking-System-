@@ -91,6 +91,15 @@ test("a committed guest booking is immediately emailed through the outbox and ac
   expect(reference).toMatch(/^BK-[A-F0-9]{16}$/);
 });
 
+test("immediate booking dispatch leaves unrelated queued work untouched", async ({ page, request }) => {
+  await request.put(`${stub}/__e2e/state`, { data: { seedUnrelatedOutbox: true } });
+  await book(page);
+  const stats = await (await request.get(`${stub}/__e2e/stats`)).json();
+  expect(stats.outbox).toHaveLength(2);
+  expect(stats.outbox[0]).toMatchObject({ state: "PENDING", attempts: 0 });
+  expect(stats.outbox[1]).toMatchObject({ state: "DELIVERED", attempts: 1 });
+});
+
 test("staff operational email requires sign-in and returns to its assigned request", async ({ page, browser, request }) => {
   await request.put(`${stub}/__e2e/state`, { data: { approvalMode: "STAFF_APPROVAL" } });
   const { id } = await book(page);

@@ -34,11 +34,11 @@ export default async function ManageGuestBooking({ searchParams }: { searchParam
       <p className="text-lg font-semibold">{appointmentStatus(state)}</p>
       <p className="mt-4 font-medium">{String(appointment.service_name)}</p>
       <p className="text-sm text-muted">With {String(appointment.staff_name)} · {formatBusinessTime(String(appointment.starts_at), zone)}</p>
-      <p className="mt-3 text-sm text-muted">{money(Number(appointment.total_amount), currency)} · {appointment.payment_mode === "PAY_AT_BUSINESS" ? "Pay at the business" : state === "AWAITING_PAYMENT" ? `${money(required, currency)} required` : "Payment required only after acceptance"}</p>
+      <p className="mt-3 text-sm text-muted">{money(Number(appointment.total_amount), currency)} · {state === "PAYMENT_EXPIRED" ? "Payment window expired; time released" : appointment.payment_mode === "PAY_AT_BUSINESS" ? "Pay at the business" : state === "AWAITING_PAYMENT" ? `${money(required, currency)} required` : "Payment required only after acceptance"}</p>
     </div>
     <p className="mt-5 text-sm leading-6 text-muted">{bookingGuidance(state)}</p>
     {state === "AWAITING_PAYMENT" && <PaymentPreparation appointmentId={String(appointment.id)} amount={required} currency={currency} deadline={appointment.payment_due_at ? String(appointment.payment_due_at) : null} timezone={zone} contactEmail={site.business?.contact_email} />}
     {state === "PENDING" && <p className="mt-5 rounded-xl bg-accent-soft p-4 text-sm leading-6">Keep this private browser access. If you change devices or lose this page, request a fresh email link using your booking reference.</p>}
-    <div className="mt-7 flex flex-wrap gap-4"><Link href="/booking/manage" className="text-sm font-semibold text-accent-dark underline">Request another private link</Link><Link href="/" className="text-sm font-semibold text-accent-dark underline">Back to website</Link></div>
+    <div className="mt-7 flex flex-wrap gap-4">{state === "PAYMENT_EXPIRED" && <Link href="/book" className="text-sm font-semibold text-accent-dark underline">Make a new booking</Link>}<Link href="/booking/manage" className="text-sm font-semibold text-accent-dark underline">Request another private link</Link><Link href="/" className="text-sm font-semibold text-accent-dark underline">Back to website</Link></div>
   </div></main>;
 }

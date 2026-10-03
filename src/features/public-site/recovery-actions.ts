@@ -17,12 +17,13 @@ export async function requestGuestRecoveryAction(_previous: RecoveryState, form:
   const decision = await consumeRateLimit("recovery", trustedClientIdentifier(await headers()));
   if (!decision.allowed) return { error: decision.unavailable ? "Email access is temporarily unavailable. Please try again later." : "Too many requests. Please wait before trying again." };
   try {
+    const requestId = randomUUID();
     const { data, error } = await createPrivilegedClient().rpc("enqueue_guest_access_notification", {
       p_email: parsed.data.email.trim().toLowerCase(),
       p_reference: parsed.data.reference,
-      p_request_id: randomUUID(),
+      p_request_id: requestId,
     });
-    if (!error && data === true) await dispatchNotificationsAfterCommit();
+    if (!error && data === true) await dispatchNotificationsAfterCommit({ outboxKey: `guest-access:${requestId}` });
   } catch {
     // Keep the public response generic and preserve account-enumeration protection.
   }

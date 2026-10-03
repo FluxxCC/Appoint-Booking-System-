@@ -25,7 +25,7 @@ const job = {
   updated_at: "2026-10-03T00:00:00Z",
 };
 
-function setup(input: { jobs?: typeof job[]; bookingState?: string; verifiedPayments?: { id: string; amount: number; currency?: string; state?: string; exception_reason?: string | null }[] } = {}) {
+function setup(input: { jobs?: typeof job[]; bookingState?: string; lifecycleCurrent?: boolean; verifiedPayments?: { id: string; amount: number; currency?: string; state?: string; exception_reason?: string | null }[] } = {}) {
   const jobs = input.jobs ?? [job];
   const acknowledgments: Record<string, unknown>[] = [];
   const tableData: Record<string, unknown> = {
@@ -59,6 +59,8 @@ function setup(input: { jobs?: typeof job[]; bookingState?: string; verifiedPaym
     },
     rpc: vi.fn(async (name: string, args: Record<string, unknown>) => {
       if (name === "claim_notification_outbox") return { data: jobs, error: null };
+      if (name === "claim_notification_outbox_by_key") return { data: jobs.filter(row => row.deduplication_key === args.p_key), error: null };
+      if (name === "notification_lifecycle_current") return { data: input.lifecycleCurrent ?? true, error: null };
       if (name === "issue_guest_access_link") return { data: { appointment_id: appointmentId, token: "a".repeat(43) }, error: null };
       if (name === "record_notification_delivery") return { data: true, error: null };
       if (name === "finish_notification_outbox") { acknowledgments.push(args); return { data: true, error: null }; }
@@ -80,7 +82,7 @@ describe("canonical transactional outbox dispatcher", () => {
     const { client, acknowledgments, jobs } = setup();
     sendEmail.mockResolvedValue({ ok: true, id: "resend-test-id" });
 
-    await expect(dispatchNotificationOutbox(5)).resolves.toEqual({ claimed: 1, delivered: 1, retrying: 0, failed: 0 });
+    await expect(dispatchNotificationOutbox(5)).resolves.toEqual({ claimed: 1, delivered: 1, retrying: 0, failed: 0, skipped: 0 });
     expect(sendEmail).toHaveBeenCalledOnce();
     expect(sendEmail.mock.calls[0][0]).toMatchObject({ kind: "booking.request_received", to: "guest@example.test" });
     expect(client.rpc).toHaveBeenCalledWith("claim_notification_outbox", { p_limit: 5 });
@@ -140,6 +142,24 @@ describe("canonical transactional outbox dispatcher", () => {
     expect(sendEmail.mock.calls[0][0]).toMatchObject({ kind: "business.payment_exception", to: "business@example.test" });
   });
 
+  it("claims only the supplied operation key and never drains an unrelated queued job", async () => {
+    const { client } = setup({ jobs: [{ ...job, deduplication_key: "other-event" }, job] });
+    sendEmail.mockResolvedValue({ ok: true, id: "resend-test-id" });
+
+    await expect(dispatchNotificationOutbox(1, eventId)).resolves.toMatchObject({ claimed: 1, delivered: 1 });
+
+    expect(client.rpc).toHaveBeenCalledWith("claim_notification_outbox_by_key", { p_key: eventId });
+    expect(client.rpc).not.toHaveBeenCalledWith("claim_notification_outbox", expect.anything());
+    expect(sendEmail).toHaveBeenCalledOnce();
+  });
+
+  it("skips a superseded lifecycle email without contacting Resend", async () => {
+    const { acknowledgments } = setup({ bookingState: "PAYMENT_EXPIRED", lifecycleCurrent: false });
+    await expect(dispatchNotificationOutbox(1)).resolves.toMatchObject({ skipped: 1, delivered: 0, failed: 0 });
+    expect(sendEmail).not.toHaveBeenCalled();
+    expect(acknowledgments[0]).toMatchObject({ p_success: false, p_retryable: false, p_error_code: "superseded" });
+  });
+
   it("treats Resend 429 responses as retryable and keeps the outbox job", async () => {
     const { acknowledgments } = setup();
     sendEmail.mockResolvedValue({ ok: false, code: "provider_error", retryable: true });
@@ -154,6 +174,6 @@ describe("canonical transactional outbox dispatcher", () => {
     const firstKey = sendEmail.mock.calls[0][0].idempotencyKey;
     await dispatchNotificationOutbox(5);
     expect(sendEmail.mock.calls[1][0].idempotencyKey).toBe(firstKey);
-    expect(client.rpc).toHaveBeenCalledTimes(8); // claim, link issue, receipt, finish for each pass
+    expect(client.rpc).toHaveBeenCalledTimes(10); // claim, lifecycle check, link issue, receipt, finish for each pass
   });
 });

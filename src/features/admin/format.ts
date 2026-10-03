@@ -13,4 +13,4 @@ export function localInput(instant: string, timezone: string) {
   return `${get("year")}-${get("month")}-${get("day")}T${get("hour")}:${get("minute")}`;
 }
 export function shiftDate(date:string,days:number) { const d=new Date(`${date}T12:00:00Z`); d.setUTCDate(d.getUTCDate()+days); return d.toISOString().slice(0,10); }
-export function label(value:string) { return value.toLowerCase().replaceAll("_"," "); }
+export function label(value:string) { return value === "PAYMENT_EXPIRED" ? "Payment Expired" : value.toLowerCase().replaceAll("_"," "); }

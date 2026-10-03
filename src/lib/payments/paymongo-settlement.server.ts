@@ -25,6 +25,11 @@ export async function settlePayMongoPayment(facts: VerifiedProviderPayment) {
     p_paid_at: facts.paidAt,
   });
   if (error || typeof result !== "string") throw new Error("Verified payment could not be recorded.");
-  await dispatchNotificationsAfterCommit();
+  if (result === "CONFIRMED") {
+    await dispatchNotificationsAfterCommit({ appointmentId: payment.appointment_id, eventState: "CONFIRMED" });
+  } else if (result === "LATE_PAYMENT_REVIEW") {
+    await dispatchNotificationsAfterCommit({ appointmentId: payment.appointment_id, eventState: "PAYMENT_EXPIRED" });
+    await dispatchNotificationsAfterCommit({ outboxKey: `payment-exception:${payment.id}` });
+  }
   return result;
 }

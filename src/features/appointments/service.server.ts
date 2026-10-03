@@ -12,7 +12,7 @@ export async function requestAppointment(input: unknown) {
     p_start: value.startsAt, p_request_key: value.requestKey,
   });
   if (error) throw new Error("Unable to request this appointment", { cause: error });
-  await dispatchNotificationsAfterCommit();
+  await dispatchNotificationsAfterCommit({ appointmentId: data });
   return data;
 }
 
@@ -21,6 +21,6 @@ export async function acceptAppointment(id: unknown) {
   const { supabase } = await requireUser();
   const { data, error } = await supabase.rpc("accept_appointment", { p_appointment: appointmentId });
   if (error) throw new Error("Unable to accept this appointment", { cause: error });
-  await dispatchNotificationsAfterCommit();
+  await dispatchNotificationsAfterCommit({ appointmentId, eventState: data });
   return data;
 }

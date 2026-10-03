@@ -8,7 +8,7 @@ export function bookingGuidance(state: State): string {
     case "AWAITING_PAYMENT": return "Your time is reserved during the payment window. Contact the business for payment instructions.";
     case "CONFIRMED": return "Your appointment is confirmed and the time is reserved.";
     case "DECLINED": return "This request was declined. Contact the business if you need help choosing another time.";
-    case "PAYMENT_EXPIRED": return "The payment window expired and this time is no longer reserved. Contact the business for help.";
+    case "PAYMENT_EXPIRED": return "The payment window expired. This reservation no longer holds the time and payment is closed. Make a new booking if you still need an appointment, or contact the business for help.";
     case "CANCELLED": return "This appointment was cancelled and the time is no longer reserved.";
     default: return "Contact the business if you need help with this appointment.";
   }

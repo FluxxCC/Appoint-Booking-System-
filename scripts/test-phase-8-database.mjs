@@ -96,7 +96,14 @@ try {
   await actor('authenticated',ids.customerOne);
   const dep=await request(ids.customerOneRow,ids.staffOneRow,ids.deposit,t2);
   const full=await request(ids.customerOneRow,ids.staffOneRow,ids.full,t3);
+  equal('admin deposit request is pending',await state(dep),'PENDING');
+  equal('admin full-payment request is pending',await state(full),'PENDING');
+  equal('pending deposit has no payment deadline',await scalar('select payment_due_at from public.appointments where id=$1',[dep]),null);
+  equal('pending full payment has no payment deadline',await scalar('select payment_due_at from public.appointments where id=$1',[full]),null);
+  equal('pending deposit has no expiry',await scalar('select payment_expired_at from public.appointments where id=$1',[dep]),null);
   await actor('service_role');
+  equal('pending reservations cannot expire',await scalar('select public.expire_due_payments()'),0);
+  await denied('pending request cannot prepare checkout','select public.prepare_payment_attempt($1,$2,null,$3,$4)',[dep,ids.customerOne,'test-provider',randomUUID()],/awaiting payment|not payable|Not payable|payment/i);
   await db.query('update public.services set deposit_amount=1500 where id=$1',[ids.deposit]);
   await actor('authenticated',ids.admin,'aal2');
   equal('deposit acceptance awaits payment',await accept(dep),'AWAITING_PAYMENT');
@@ -105,6 +112,19 @@ try {
   equal('full amount uses request snapshot',await scalar('select required_payment_amount from public.appointments where id=$1',[full]),7000);
   const deadline=await scalar('select payment_due_at from public.appointments where id=$1',[dep]);
   equal('payment deadline is server generated',new Date(deadline)>new Date(),true);
+  equal('deadline begins at acceptance',await scalar("select abs(extract(epoch from (payment_due_at-accepted_at-interval '30 minutes'))) < 1 from public.appointments where id=$1",[dep]),true);
+  equal('full-payment deadline begins at acceptance',await scalar("select abs(extract(epoch from (payment_due_at-accepted_at-interval '30 minutes'))) < 1 from public.appointments where id=$1",[full]),true);
+  await actor('service_role');
+  const pendingEventKey=await scalar("select id::text from public.appointment_events where appointment_id=$1 and to_state='PENDING' order by created_at limit 1",[dep]);
+  const awaitingEventKey=await scalar("select id::text from public.appointment_events where appointment_id=$1 and to_state='AWAITING_PAYMENT' order by created_at limit 1",[dep]);
+  const pendingClaim=await scalar('select id from public.claim_notification_outbox_by_key($1)',[pendingEventKey]);
+  equal('stale pending notification is rejected',await scalar('select public.notification_lifecycle_current($1)',[pendingClaim]),false);
+  equal('stale notification is acknowledged without delivery',await scalar("select public.finish_notification_outbox($1,false,false,'superseded')",[pendingClaim]),true);
+  equal('superseded notification remains as failed history',await scalar('select state from public.notification_outbox where id=$1',[pendingClaim]),'FAILED');
+  const awaitingClaim=await scalar('select id from public.claim_notification_outbox_by_key($1)',[awaitingEventKey]);
+  equal('current payment-required notification is valid',await scalar('select public.notification_lifecycle_current($1)',[awaitingClaim]),true);
+  equal('scoped claim leaves other work unclaimed',await scalar("select count(*)::int from public.notification_outbox where state='PROCESSING'"),1);
+  await actor('authenticated',ids.admin,'aal2');
   await denied('client cannot update payment requirement','update public.appointments set required_payment_amount=1 where id=$1',[dep],/permission denied/);
   await denied('client cannot update payment deadline',"update public.appointments set payment_due_at=now()+interval '1 day' where id=$1",[dep],/permission denied/);
   await actor('authenticated',ids.customerOne);
@@ -114,6 +134,8 @@ try {
   await actor('service_role');
   const expAmount=await scalar('select required_payment_amount from public.appointments where id=$1',[exp]);
   const pendingPayment=await scalar("insert into public.payments(appointment_id,provider,provider_reference,idempotency_key,amount,currency) values($1,'fixture',$2,$3,$4,'USD') returning id",[exp,randomUUID(),randomUUID(),expAmount]);
+  equal('awaiting payment cannot expire before deadline',await scalar('select public.expire_due_payments()'),0);
+  equal('awaiting reservation remains active before deadline',await state(exp),'AWAITING_PAYMENT');
   // Fixture-only clock jump; the production guard is restored before expiration.
   await db.exec('reset role');
   await db.exec('alter table public.appointments disable trigger guard_appointment');
@@ -123,6 +145,7 @@ try {
   equal('overdue reservation expires',await scalar('select public.expire_due_payments()'),1);
   equal('expiration is idempotent',await scalar('select public.expire_due_payments()'),0);
   equal('expired reservation no longer blocks',await state(exp),'PAYMENT_EXPIRED');
+  equal('expired checkout is refused',await (async()=>{try{await db.query('select public.prepare_payment_attempt($1,$2,null,$3,$4)',[exp,ids.customerOne,'test-provider',randomUUID()]);return false;}catch{return true;}})(),true);
   equal('expiry event is singular',await scalar("select count(*)::int from public.appointment_events where appointment_id=$1 and to_state='PAYMENT_EXPIRED'",[exp]),1);
   await actor('authenticated',ids.customerTwo);
   const replacement=await request(ids.customerTwoRow,ids.staffTwoRow,ids.cash,t4);
@@ -132,15 +155,26 @@ try {
   equal('late payment requires review',await scalar('select public.record_verified_payment($1,$2,clock_timestamp())',[pendingPayment,randomUUID()]),'LATE_PAYMENT_REVIEW');
   equal('expired booking stays expired',await state(exp),'PAYMENT_EXPIRED');
   equal('replacement keeps slot',await state(replacement),'CONFIRMED');
-
   await actor('authenticated',ids.owner,'aal2');
+  const adminExpired=await json("select public.admin_data('appointments',null,null,'PAYMENT_EXPIRED')");
+  equal('admin expiration filter finds the historical booking',adminExpired.appointments.some(row=>row.id===exp),true);
+  const adminDashboard=await json("select public.admin_data('dashboard')");
+  equal('dashboard counts expired payments separately',adminDashboard.stats.payment_expired,1);
+  equal('expired booking is absent from active upcoming list',adminDashboard.upcoming.some(row=>row.id===exp),false);
+  const adminCalendar=await json("select public.admin_data('calendar',null,$1::date)",[t4.slice(0,10)]);
+  equal('calendar labels expired booking as history',adminCalendar.appointments.find(row=>row.id===exp)?.state,'PAYMENT_EXPIRED');
+
   equal('owner sets staff mode',await scalar("select public.set_booking_approval_mode('STAFF_APPROVAL')"),'STAFF_APPROVAL');
   await actor('authenticated',ids.customerOne);
   const ownStaff=await request(ids.customerOneRow,ids.staffOneRow,ids.cash,t5);
+  const staffDeposit=await request(ids.customerOneRow,ids.staffOneRow,ids.deposit,start(8,13));
+  equal('staff approval deposit request has no deadline',await scalar('select payment_due_at from public.appointments where id=$1',[staffDeposit]),null);
   await actor('authenticated',ids.staffTwo);
   await denied('different staff cannot approve','select public.accept_appointment($1)',[ownStaff],/not authorized/);
   await actor('authenticated',ids.staffOne);
   equal('assigned staff can accept',await accept(ownStaff),'CONFIRMED');
+  equal('assigned staff deposit acceptance awaits payment',await accept(staffDeposit),'AWAITING_PAYMENT');
+  equal('staff deadline begins at acceptance',await scalar("select abs(extract(epoch from (payment_due_at-accepted_at-interval '30 minutes'))) < 1 from public.appointments where id=$1",[staffDeposit]),true);
   await actor('authenticated',ids.customerOne);
   const staffDecline=await request(ids.customerOneRow,ids.staffOneRow,ids.cash,start(8,10));
   await actor('authenticated',ids.staffOne);
@@ -167,6 +201,8 @@ try {
   equal('auto deposit waits for payment',await state(autoDeposit),'AWAITING_PAYMENT');
   const autoFull=await request(ids.customerOneRow,ids.staffOneRow,ids.full,start(9,12));
   equal('auto full waits for payment',await state(autoFull),'AWAITING_PAYMENT');
+  equal('automatic deposit has immediate deadline',await scalar('select payment_due_at is not null and accepted_at is not null from public.appointments where id=$1',[autoDeposit]),true);
+  equal('automatic full has immediate deadline',await scalar('select payment_due_at is not null and accepted_at is not null from public.appointments where id=$1',[autoFull]),true);
   await actor('service_role');
   const firstAttemptData=await json('select public.prepare_payment_attempt($1,$2,null,$3,$4)',[autoDeposit,ids.customerOne,'test-provider',randomUUID()]);
   equal('registered customer checkout amount comes from appointment snapshot',firstAttemptData.amount_minor,1500);
@@ -184,6 +220,9 @@ try {
   equal('provider checkout attaches once',attached.reused,false);
   equal('provider checkout attachment retry is idempotent',(await json("select public.attach_payment_checkout($1,'provider-ref-1','https://checkout.example.test/session-1')",[firstAttemptData.payment_id])).reused,true);
   await denied('provider checkout attachment cannot be replaced',"select public.attach_payment_checkout($1,'provider-ref-2','https://checkout.example.test/session-2')",[firstAttemptData.payment_id],/already attached/);
+  equal('verified payment confirms reservation',await scalar('select public.record_verified_payment($1,$2,clock_timestamp())',[firstAttemptData.payment_id,'verified-test-reference']),'CONFIRMED');
+  equal('successful payment cannot expire',await scalar('select public.expire_due_payments()'),0);
+  equal('settled appointment stays confirmed',await state(autoDeposit),'CONFIRMED');
 
   const guestCustomer=randomUUID(),guestAppointment=await (async()=>{
     await db.query("insert into public.customers(id,display_name,email) values($1,'Guest','guest@example.test')",[guestCustomer]);
@@ -216,6 +255,8 @@ try {
   await denied('anonymous cannot attach provider checkout','select public.attach_payment_checkout($1,$2,$3)',[guestAttempt.payment_id,'ref','https://checkout.example.test/session'],/permission denied/);
   await denied('anonymous cannot call acceptance','select public.accept_appointment($1)',[autoCash],/permission denied/);
   await denied('anonymous cannot call expiration','select public.expire_due_payments()',[],/permission denied/);
+  await denied('anonymous cannot claim a scoped outbox message','select * from public.claim_notification_outbox_by_key($1)',[pendingEventKey],/permission denied/);
+  await denied('anonymous cannot inspect lifecycle validation','select public.notification_lifecycle_current($1)',[pendingClaim],/permission denied/);
   await denied('anonymous cannot call protected booking','select public.server_public_booking_submit(null,null,null,null,null,null,null,null)',[],/permission denied/);
   await actor('authenticated',ids.customerTwo);
   equal('other customer cannot see booking',await scalar('select count(*)::int from public.appointments where id=$1',[autoCash]),0);
