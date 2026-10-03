@@ -1,0 +1,2 @@
+export const BOOKING_MODE = "ADMIN_APPROVAL" as const;
+export const DEFAULT_PAYMENT_WINDOW_MINUTES = 30;

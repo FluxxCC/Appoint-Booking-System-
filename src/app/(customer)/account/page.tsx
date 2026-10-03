@@ -1,0 +1,10 @@
+import Link from "next/link";
+import { requireArea } from "@/lib/auth/access.server";
+import { readCustomerAppointments } from "@/features/appointments/customer-data.server";
+import { AppointmentList, isUpcomingAppointment } from "@/components/customer/appointment-list";
+
+export default async function AccountPage() {
+  const {supabase}=await requireArea("account"),result=await readCustomerAppointments();
+  const {data:business}=await supabase.from("business_settings").select("timezone").maybeSingle(),upcoming=result.appointments.filter(isUpcomingAppointment),history=result.appointments.filter(a=>!isUpcomingAppointment(a));
+  return <div className="mx-auto max-w-5xl"><div className="flex flex-wrap items-end justify-between gap-5"><div><p className="eyebrow">Your visits</p><h1 className="display-type mt-3 text-4xl sm:text-5xl">Your appointments, in one place.</h1><p className="mt-3 text-muted">Track requests, prepare for your next visit, and explore what’s next.</p></div><Link href="/book" className="button-primary">Book an appointment</Link></div><section className="mt-10"><div className="mb-5 flex items-baseline justify-between gap-3"><h2 className="text-xl font-semibold">Coming up</h2><span className="text-sm text-muted">Pending and scheduled</span></div><AppointmentList appointments={upcoming} timezone={business?.timezone??"UTC"} emptyTitle="Nothing coming up yet" emptyDescription="Choose a service and time when you’re ready for your next visit."/></section><section className="mt-12"><div className="mb-5 flex items-baseline justify-between"><h2 className="text-xl font-semibold">Previous visits</h2><Link href="/account/appointments" className="text-sm font-semibold text-accent-dark underline underline-offset-4">All appointments</Link></div><AppointmentList appointments={history} timezone={business?.timezone??"UTC"} limit={5} direction="desc" emptyTitle="No previous visits" emptyDescription="Completed and past appointments will appear here." showBookAction={false}/></section></div>;
+}

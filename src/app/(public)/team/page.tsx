@@ -1,0 +1,9 @@
+import Link from "next/link";
+import Image from "next/image";
+import { readPublicWebsite } from "@/features/public-site/data.server";
+import { StaffCard } from "@/components/public-site/site";
+
+export default async function TeamPage() {
+  const site = await readPublicWebsite();
+  return <main><section className="bg-ink text-white"><div className="mx-auto grid max-w-7xl items-center gap-8 px-5 py-14 sm:py-20 md:grid-cols-[1fr_.75fr]"><div><p className="text-xs font-bold uppercase tracking-[.2em] text-on-dark-accent">Our people</p><h1 className="display-type mt-4 text-5xl sm:text-6xl">The care behind every visit.</h1><p className="mt-5 max-w-xl text-base leading-8 text-white/75">Meet the professionals at {site.business?.name ?? "our studio"} and find the right person for your next appointment.</p></div><div className="relative hidden aspect-[3/2] overflow-hidden rounded-[1.2rem] md:block"><Image src="/images/staff-portrait.webp" alt="Representative barber portrait" fill priority sizes="40vw" className="object-cover object-[center_35%]"/></div></div></section><section className="mx-auto max-w-7xl px-5 py-12 sm:py-16"><div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{site.staff.map((person,index) => <StaffCard key={person.id} priority={index===0} staff={person} services={site.services.filter(service => site.assignments.some(assignment => assignment.staff_id === person.id && assignment.service_id === service.id)).map(service => service.name)}/>)}</div>{!site.staff.length && <div className="surface-card p-8 text-center"><h2 className="text-lg font-semibold">Team profiles are coming soon</h2><p className="mt-2 text-sm text-muted">Contact us to ask who can help with your service.</p><Link href="/contact" className="button-secondary mt-5">Contact us</Link></div>}</section></main>;
+}

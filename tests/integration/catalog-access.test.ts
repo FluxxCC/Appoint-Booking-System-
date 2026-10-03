@@ -1,0 +1,10 @@
+import {beforeEach,it,expect,vi} from "vitest";
+const mocks=vi.hoisted(()=>({guard:vi.fn(),rpc:vi.fn(),from:vi.fn()}));
+vi.mock("@/lib/auth/access.server",()=>({requireArea:mocks.guard}));
+vi.mock("next/cache",()=>({revalidatePath:vi.fn()}));
+import {saveCategory,saveService,saveStaff,assignServices,saveStaffHours,saveException,removeException} from "../../src/features/catalog/actions";
+import {saveImage} from "../../src/features/catalog/image-actions";
+import {readCatalog,readStaffWorkspace} from "../../src/features/catalog/data.server";
+beforeEach(()=>{vi.clearAllMocks();mocks.guard.mockRejectedValue(Error("Denied"));});
+it("guards all catalog and image mutations before database or storage access",async()=>{for(const action of [saveCategory,saveService,saveStaff,assignServices,saveStaffHours,saveException,removeException,saveImage])await expect(action({},new FormData())).rejects.toThrow("Denied");expect(mocks.guard).toHaveBeenCalledWith("admin");expect(mocks.rpc).not.toHaveBeenCalled();expect(mocks.from).not.toHaveBeenCalled();});
+it("guards management reads and derives staff dashboard identity on the server",async()=>{await expect(readCatalog("staff")).rejects.toThrow("Denied");await expect(readStaffWorkspace()).rejects.toThrow("Denied");mocks.guard.mockResolvedValue({supabase:{rpc:mocks.rpc,from:mocks.from}});mocks.rpc.mockResolvedValue({data:{staff_id:"own-staff"},error:null});mocks.from.mockReturnValue({select:()=>({maybeSingle:async()=>({data:{booking_approval_mode:"STAFF_APPROVAL"},error:null})})});const workspace=await readStaffWorkspace();expect(workspace.approval_mode).toBe("STAFF_APPROVAL");expect(mocks.guard).toHaveBeenLastCalledWith("staff");expect(mocks.rpc).toHaveBeenCalledWith("my_staff_workspace");});

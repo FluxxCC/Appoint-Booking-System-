@@ -1,0 +1,15 @@
+import {beforeEach,it,expect,vi} from "vitest";
+import {renderToStaticMarkup} from "react-dom/server";
+const mocks=vi.hoisted(()=>({catalog:vi.fn(),staff:vi.fn()}));
+vi.mock("@/features/catalog/data.server",()=>({readCatalog:mocks.catalog,readStaffWorkspace:mocks.staff}));
+vi.mock("next/navigation",()=>({notFound:()=>{throw Error("NOT_FOUND");}}));
+vi.mock("@/features/catalog/actions",()=>({saveCategory:vi.fn(),saveService:vi.fn(),saveStaff:vi.fn(),assignServices:vi.fn(),saveStaffHours:vi.fn(),saveException:vi.fn(),removeException:vi.fn()}));
+vi.mock("@/features/catalog/image-actions",()=>({saveImage:vi.fn()}));
+vi.mock("@/features/admin/actions",()=>({saveSettings:vi.fn(),saveHours:vi.fn(),saveClosure:vi.fn(),saveAnnouncement:vi.fn(),deleteClosure:vi.fn(),deleteAnnouncement:vi.fn()}));
+import {CatalogList,CatalogEditor,CategoriesPage} from "../../src/features/catalog/pages";
+import {StaffDashboard,StaffAvailability,StaffCalendar,StaffAppointmentsPage} from "../../src/features/catalog/staff-workspace";
+const empty={business:null,page:1,total:0,categories:[],services:[],staff:[],service_options:[],staff_options:[],assigned_services:[],hours:[],exceptions:[],upcoming:[]};
+beforeEach(()=>{mocks.catalog.mockResolvedValue({data:empty,filters:{q:"",active:"",category:"",page:1}});mocks.staff.mockResolvedValue({staff_id:crypto.randomUUID(),timezone:"Asia/Manila",date:"2026-10-01",hours:[],business_hours:[],exceptions:[],stats:{today:0,pending:0,confirmed:0,upcoming:0},today:[],pending:[],confirmed:[],upcoming:[]});});
+it("renders all catalog and staff empty states",async()=>{for(const page of [()=>CatalogList({kind:"services",search:{}}),()=>CatalogList({kind:"staff",search:{}}),()=>CatalogEditor({kind:"services"}),()=>CatalogEditor({kind:"staff"}),()=>CategoriesPage(),()=>StaffDashboard(),()=>StaffCalendar(),()=>StaffAppointmentsPage(),()=>StaffAvailability()]){const html=renderToStaticMarkup(await page());expect(html).toContain("<h1");expect(html).not.toContain("NaN");}expect(renderToStaticMarkup(await StaffAvailability())).toContain("No breaks, leave or extra hours are scheduled.");});
+it("rejects missing or malformed detail identifiers",async()=>{await expect(CatalogEditor({kind:"staff",id:"bad"})).rejects.toThrow("NOT_FOUND");await expect(CatalogEditor({kind:"services",id:crypto.randomUUID()})).rejects.toThrow("NOT_FOUND");});
+it("renders populated staff editors and escapes untrusted profile content",async()=>{const id=crypto.randomUUID();mocks.catalog.mockResolvedValue({data:{...empty,staff:[{id,display_name:"<script>bad</script>",slug:"john",bio:"",active:true,published:false,bookable:false,photo_path:null}],service_options:[{id:crypto.randomUUID(),name:"Haircut",active:true}]},filters:{}});const html=renderToStaticMarkup(await CatalogEditor({kind:"staff",id}));expect(html).toContain("Save assignments");expect(html).toContain("Save weekly hours");expect(html).toContain("&lt;script&gt;");expect(html).not.toContain("<script>bad");});

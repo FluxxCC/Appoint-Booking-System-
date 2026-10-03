@@ -1,0 +1,3 @@
+export function LoadingSkeleton({ label = "Loading your workspace…" }: { label?: string }) {
+  return <div role="status" aria-live="polite" className="surface-card p-6 sm:p-8"><span className="sr-only">{label}</span><div aria-hidden="true" className="animate-pulse space-y-5"><div className="h-3 w-28 rounded-full bg-accent-soft"/><div className="h-8 w-2/5 rounded-lg bg-line"/><div className="grid gap-4 sm:grid-cols-3"><div className="h-28 rounded-2xl bg-canvas"/><div className="h-28 rounded-2xl bg-canvas"/><div className="h-28 rounded-2xl bg-canvas"/></div><div className="h-40 rounded-2xl bg-canvas"/></div></div>;
+}

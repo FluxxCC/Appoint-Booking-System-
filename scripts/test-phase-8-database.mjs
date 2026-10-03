@@ -1,0 +1,196 @@
+import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
+import { createDatabase } from './database-harness.mjs';
+
+const db = await createDatabase();
+const ids = Object.fromEntries(['owner','admin','staffOne','staffTwo','customerOne','customerTwo','customerOneRow','customerTwoRow','staffOneRow','staffTwoRow','staffNoLogin','cash','deposit','full','policy'].map(k => [k,randomUUID()]));
+let checks = 0;
+const equal = (name, actual, expected) => { assert.deepEqual(actual,expected,name); checks++; };
+const scalar = async (sql,params=[]) => Object.values((await db.query(sql,params)).rows[0])[0];
+const json = async (sql,params=[]) => { const value=await scalar(sql,params); return typeof value==='string'?JSON.parse(value):value; };
+async function actor(role,user='',aal='aal1') {
+  await db.exec('reset role');
+  await db.query("select set_config('request.jwt.claim.sub',$1,false),set_config('request.jwt.claims',$2,false)",[user,JSON.stringify({sub:user,aal})]);
+  await db.exec(`set role ${role}`);
+}
+async function denied(name,sql,params=[],pattern=/./) { await assert.rejects(db.query(sql,params),pattern,name); checks++; }
+const start = (dayOffset,hour) => new Date(Date.now()+dayOffset*86400000).toISOString().slice(0,10)+`T${String(hour).padStart(2,'0')}:00:00.000Z`;
+const request = (customer,staff,service,when,key=randomUUID()) => scalar('select public.request_appointment($1,$2,$3,$4,$5)',[customer,staff,service,when,key]);
+const accept = id => scalar('select public.accept_appointment($1)',[id]);
+const decline = (id,reason='The requested time is unavailable') => scalar("select public.transition_appointment($1,'DECLINED',$2)",[id,reason]);
+const state = id => scalar('select state from public.appointments where id=$1',[id]);
+const eventCount = id => scalar('select count(*)::int from public.appointment_events where appointment_id=$1',[id]);
+
+try {
+  for (const name of ['owner','admin','staffOne','staffTwo','customerOne','customerTwo'])
+    await db.query('insert into auth.users(id,email) values($1,$2)',[ids[name],`${name}@example.test`]);
+  await actor('service_role');
+  await db.query("insert into public.user_roles(auth_user_id,role) values($1,'OWNER'),($2,'ADMIN'),($3,'STAFF'),($4,'STAFF')",[ids.owner,ids.admin,ids.staffOne,ids.staffTwo]);
+  await db.query("insert into public.business_settings(name,timezone,currency,published,guest_booking_enabled) values('Phase 8 fixture','UTC','USD',true,true)");
+  await db.query("insert into public.booking_policy_versions(id,version,terms,published,minimum_notice_minutes,payment_window_minutes) values($1,1,'Fixture terms',true,0,30)",[ids.policy]);
+  await db.query("insert into public.customers(id,auth_user_id,display_name,email) values($1,$2,'One','one@example.test'),($3,$4,'Two','two@example.test')",[ids.customerOneRow,ids.customerOne,ids.customerTwoRow,ids.customerTwo]);
+  await db.query("insert into public.staff(id,auth_user_id,display_name,slug,active,published,bookable) values($1,$2,'Staff One','staff-one',true,true,true),($3,$4,'Staff Two','staff-two',true,true,true),($5,null,'No Login','no-login',true,true,true)",[ids.staffOneRow,ids.staffOne,ids.staffTwoRow,ids.staffTwo,ids.staffNoLogin]);
+  await db.query("insert into public.services(id,name,slug,price_amount,duration_minutes,payment_mode,deposit_amount,active,published) values($1,'Cash','cash',3000,30,'PAY_AT_BUSINESS',0,true,true),($2,'Deposit','deposit',5000,30,'DEPOSIT',1000,true,true),($3,'Full','full',7000,30,'FULL_PAYMENT',0,true,true)",[ids.cash,ids.deposit,ids.full]);
+  for (const staff of [ids.staffOneRow,ids.staffTwoRow,ids.staffNoLogin]) {
+    for (const service of [ids.cash,ids.deposit,ids.full]) await db.query('insert into public.staff_services(staff_id,service_id) values($1,$2)',[staff,service]);
+    await db.query("insert into public.staff_working_hours(staff_id,weekday,starts_at,ends_at) select $1,d,'08:00','20:00' from generate_series(0,6)d",[staff]);
+  }
+  await db.exec("insert into public.business_hours(weekday,opens_at,closes_at) select d,'08:00','20:00' from generate_series(0,6)d");
+  equal('default approval mode',await scalar('select booking_approval_mode from public.business_settings'),'ADMIN_APPROVAL');
+  const t1=start(7,10),t2=start(7,11),t3=start(7,12),t4=start(7,13),t5=start(7,14);
+
+  await actor('authenticated',ids.customerOne);
+  const a=await request(ids.customerOneRow,ids.staffOneRow,ids.cash,t1);
+  const b=await request(ids.customerOneRow,ids.staffOneRow,ids.cash,t1);
+  equal('overlapping requests are pending',await scalar("select count(*)::int from public.appointments where staff_id=$1 and starts_at=$2 and state='PENDING'",[ids.staffOneRow,t1]),2);
+  await actor('authenticated',ids.staffOne);
+  await denied('staff cannot accept in admin mode','select public.accept_appointment($1)',[a],/not authorized/);
+  await denied('staff cannot decline in admin mode',"select public.transition_appointment($1,'DECLINED','A clear decline reason')",[b],/not authorized/);
+  await actor('authenticated',ids.customerOne);
+  await denied('customer cannot accept','select public.accept_appointment($1)',[a],/not authorized/);
+  await actor('authenticated',ids.owner);
+  await denied('owner AAL1 cannot approve','select public.accept_appointment($1)',[a],/not authorized/);
+  await actor('authenticated',ids.owner,'aal2');
+  equal('cash acceptance confirms',await accept(a),'CONFIRMED');
+  equal('accepted source is manual',await scalar('select acceptance_source from public.appointments where id=$1',[a]),'MANUAL');
+  equal('cash acceptance requires no online payment',await scalar('select payment_due_at from public.appointments where id=$1',[a]),null);
+  const firstEvents=await eventCount(a);
+  equal('repeated acceptance returns state',await accept(a),'CONFIRMED');
+  equal('repeated acceptance appends no event',await eventCount(a),firstEvents);
+  await actor('authenticated',ids.admin,'aal2');
+  await denied('second acceptance has safe conflict','select public.accept_appointment($1)',[b],/no longer available/);
+  equal('losing request stays pending',await state(b),'PENDING');
+  await denied('decline needs useful reason',"select public.transition_appointment($1,'DECLINED','no')",[b],/useful decline reason/);
+  await decline(b);
+  equal('decline reason persisted',await scalar('select decline_reason from public.appointments where id=$1',[b]),'The requested time is unavailable');
+  const declinedEvents=await eventCount(b);await decline(b);
+  equal('repeated decline appends no event',await eventCount(b),declinedEvents);
+  equal('decline did not reserve',await state(b),'DECLINED');
+  equal('admin accept is audited',await scalar("select count(*)::int from public.audit_logs where entity_id=$1 and action='BOOKING_ACCEPTED'",[a]),1);
+  equal('admin decline is audited',await scalar("select count(*)::int from public.audit_logs where entity_id=$1 and action='BOOKING_DECLINED'",[b]),1);
+
+  await actor('authenticated',ids.customerOne);
+  const raceStart=start(7,16);
+  const raceOne=await request(ids.customerOneRow,ids.staffTwoRow,ids.cash,raceStart);
+  const raceTwo=await request(ids.customerOneRow,ids.staffTwoRow,ids.cash,raceStart);
+  await actor('authenticated',ids.admin,'aal2');
+  const competing=await Promise.allSettled([accept(raceOne),accept(raceTwo)]);
+  equal('competing acceptance has one winner',competing.filter(result=>result.status==='fulfilled').length,1);
+  equal('competing acceptance has one conflict',competing.filter(result=>result.status==='rejected'&&/no longer available/.test(String(result.reason))).length,1);
+  equal('exclusion keeps a single reservation',await scalar("select count(*)::int from public.appointments where staff_id=$1 and starts_at=$2 and state='CONFIRMED'",[ids.staffTwoRow,raceStart]),1);
+  equal('loser remains pending',await scalar("select count(*)::int from public.appointments where staff_id=$1 and starts_at=$2 and state='PENDING'",[ids.staffTwoRow,raceStart]),1);
+
+  await actor('authenticated',ids.customerOne);
+  const dep=await request(ids.customerOneRow,ids.staffOneRow,ids.deposit,t2);
+  const full=await request(ids.customerOneRow,ids.staffOneRow,ids.full,t3);
+  await actor('service_role');
+  await db.query('update public.services set deposit_amount=1500 where id=$1',[ids.deposit]);
+  await actor('authenticated',ids.admin,'aal2');
+  equal('deposit acceptance awaits payment',await accept(dep),'AWAITING_PAYMENT');
+  equal('deposit amount uses request snapshot',await scalar('select required_payment_amount from public.appointments where id=$1',[dep]),1000);
+  equal('full-payment acceptance awaits payment',await accept(full),'AWAITING_PAYMENT');
+  equal('full amount uses request snapshot',await scalar('select required_payment_amount from public.appointments where id=$1',[full]),7000);
+  const deadline=await scalar('select payment_due_at from public.appointments where id=$1',[dep]);
+  equal('payment deadline is server generated',new Date(deadline)>new Date(),true);
+  await denied('client cannot update payment requirement','update public.appointments set required_payment_amount=1 where id=$1',[dep],/permission denied/);
+  await denied('client cannot update payment deadline',"update public.appointments set payment_due_at=now()+interval '1 day' where id=$1",[dep],/permission denied/);
+  await actor('authenticated',ids.customerOne);
+  const exp=await request(ids.customerOneRow,ids.staffTwoRow,ids.deposit,t4);
+  await actor('authenticated',ids.owner,'aal2');
+  equal('future deposit initially reserves',await accept(exp),'AWAITING_PAYMENT');
+  await actor('service_role');
+  const expAmount=await scalar('select required_payment_amount from public.appointments where id=$1',[exp]);
+  const pendingPayment=await scalar("insert into public.payments(appointment_id,provider,provider_reference,idempotency_key,amount,currency) values($1,'fixture',$2,$3,$4,'USD') returning id",[exp,randomUUID(),randomUUID(),expAmount]);
+  // Fixture-only clock jump; the production guard is restored before expiration.
+  await db.exec('reset role');
+  await db.exec('alter table public.appointments disable trigger guard_appointment');
+  await db.query("update public.appointments set payment_due_at=clock_timestamp()-interval '1 hour',accepted_at=clock_timestamp()-interval '2 hours' where id=$1",[exp]);
+  await db.exec('alter table public.appointments enable trigger guard_appointment');
+  await actor('service_role');
+  equal('overdue reservation expires',await scalar('select public.expire_due_payments()'),1);
+  equal('expiration is idempotent',await scalar('select public.expire_due_payments()'),0);
+  equal('expired reservation no longer blocks',await state(exp),'PAYMENT_EXPIRED');
+  equal('expiry event is singular',await scalar("select count(*)::int from public.appointment_events where appointment_id=$1 and to_state='PAYMENT_EXPIRED'",[exp]),1);
+  await actor('authenticated',ids.customerTwo);
+  const replacement=await request(ids.customerTwoRow,ids.staffTwoRow,ids.cash,t4);
+  await actor('authenticated',ids.owner,'aal2');
+  equal('replacement acquires expired slot',await accept(replacement),'CONFIRMED');
+  await actor('service_role');
+  equal('late payment requires review',await scalar('select public.record_verified_payment($1,$2,clock_timestamp())',[pendingPayment,randomUUID()]),'LATE_PAYMENT_REVIEW');
+  equal('expired booking stays expired',await state(exp),'PAYMENT_EXPIRED');
+  equal('replacement keeps slot',await state(replacement),'CONFIRMED');
+
+  await actor('authenticated',ids.owner,'aal2');
+  equal('owner sets staff mode',await scalar("select public.set_booking_approval_mode('STAFF_APPROVAL')"),'STAFF_APPROVAL');
+  await actor('authenticated',ids.customerOne);
+  const ownStaff=await request(ids.customerOneRow,ids.staffOneRow,ids.cash,t5);
+  await actor('authenticated',ids.staffTwo);
+  await denied('different staff cannot approve','select public.accept_appointment($1)',[ownStaff],/not authorized/);
+  await actor('authenticated',ids.staffOne);
+  equal('assigned staff can accept',await accept(ownStaff),'CONFIRMED');
+  await actor('authenticated',ids.customerOne);
+  const staffDecline=await request(ids.customerOneRow,ids.staffOneRow,ids.cash,start(8,10));
+  await actor('authenticated',ids.staffOne);
+  await decline(staffDecline,'Assigned staff unavailable');
+  equal('assigned staff can decline',await state(staffDecline),'DECLINED');
+  await actor('authenticated',ids.customerOne);
+  const noLogin=await request(ids.customerOneRow,ids.staffNoLogin,ids.cash,start(8,11));
+  await actor('authenticated',ids.owner,'aal2');
+  equal('owner fallback manages staff without login',await accept(noLogin),'CONFIRMED');
+  await actor('authenticated',ids.customerOne);
+  const adminFallback=await request(ids.customerOneRow,ids.staffNoLogin,ids.cash,start(8,12));
+  await actor('authenticated',ids.admin,'aal2');
+  equal('admin fallback manages staff request',await accept(adminFallback),'CONFIRMED');
+
+  await actor('authenticated',ids.owner,'aal2');
+  await scalar("select public.set_booking_approval_mode('AUTO_CONFIRM')");
+  await actor('authenticated',ids.customerOne);
+  const autoCash=await request(ids.customerOneRow,ids.staffOneRow,ids.cash,start(9,10));
+  equal('auto cash confirms',await state(autoCash),'CONFIRMED');
+  equal('automatic acceptance has no human approver',await scalar('select accepted_by from public.appointments where id=$1',[autoCash]),null);
+  equal('automatic source recorded',await scalar('select acceptance_source from public.appointments where id=$1',[autoCash]),'AUTO');
+  await denied('auto cannot create overlapping request','select public.request_appointment($1,$2,$3,$4,$5)',[ids.customerOneRow,ids.staffOneRow,ids.cash,start(9,10),randomUUID()],/no longer available|Slot already reserved/);
+  const autoDeposit=await request(ids.customerOneRow,ids.staffOneRow,ids.deposit,start(9,11));
+  equal('auto deposit waits for payment',await state(autoDeposit),'AWAITING_PAYMENT');
+  const autoFull=await request(ids.customerOneRow,ids.staffOneRow,ids.full,start(9,12));
+  equal('auto full waits for payment',await state(autoFull),'AWAITING_PAYMENT');
+  await actor('service_role');
+  const firstAttemptData=await json('select public.prepare_payment_attempt($1,$2,null,$3,$4)',[autoDeposit,ids.customerOne,'test-provider',randomUUID()]);
+  equal('registered customer checkout amount comes from appointment snapshot',firstAttemptData.amount_minor,1500);
+  equal('registered customer checkout currency comes from appointment snapshot',firstAttemptData.currency,'USD');
+  equal('first checkout attempt is newly prepared',firstAttemptData.reused,false);
+  const repeatedAttempt=await json('select public.prepare_payment_attempt($1,$2,null,$3,$4)',[autoDeposit,ids.customerOne,'test-provider',randomUUID()]);
+  equal('repeated checkout preparation reuses attempt',repeatedAttempt.reused,true);
+  equal('repeated checkout preparation reuses idempotency key',repeatedAttempt.idempotency_key,firstAttemptData.idempotency_key);
+  equal('only one active payment attempt exists',await scalar("select count(*)::int from public.payments where appointment_id=$1 and state='PENDING'",[autoDeposit]),1);
+  await actor('authenticated',ids.customerTwo);
+  await denied('other customer cannot prepare checkout','select public.prepare_payment_attempt($1,$2,null,$3,$4)',[autoDeposit,ids.customerTwo,'test-provider',randomUUID()],/permission denied/);
+  await actor('service_role');
+  await denied('service checkout preparation rejects wrong customer','select public.prepare_payment_attempt($1,$2,null,$3,$4)',[autoDeposit,ids.customerTwo,'test-provider',randomUUID()],/Not authorized/);
+  const attached=await json("select public.attach_payment_checkout($1,'provider-ref-1','https://checkout.example.test/session-1')",[firstAttemptData.payment_id]);
+  equal('provider checkout attaches once',attached.reused,false);
+  equal('provider checkout attachment retry is idempotent',(await json("select public.attach_payment_checkout($1,'provider-ref-1','https://checkout.example.test/session-1')",[firstAttemptData.payment_id])).reused,true);
+  await denied('provider checkout attachment cannot be replaced',"select public.attach_payment_checkout($1,'provider-ref-2','https://checkout.example.test/session-2')",[firstAttemptData.payment_id],/already attached/);
+
+  const guestCustomer=randomUUID(),guestAppointment=await (async()=>{
+    await db.query("insert into public.customers(id,display_name,email) values($1,'Guest','guest@example.test')",[guestCustomer]);
+    return request(guestCustomer,ids.staffTwoRow,ids.deposit,start(10,10));
+  })();
+  equal('guest checkout fixture awaits payment',await state(guestAppointment),'AWAITING_PAYMENT');
+  const guestTokenHash='a'.repeat(64);
+  await db.query("insert into public.guest_access_tokens(appointment_id,token_hash,scope,expires_at) values($1,$2,'VIEW',clock_timestamp()+interval '1 hour')",[guestAppointment,guestTokenHash]);
+  const guestAttempt=await json('select public.prepare_payment_attempt($1,null,$2,$3,$4)',[guestAppointment,guestTokenHash,'test-provider',randomUUID()]);
+  equal('authorized guest can prepare the shared payment attempt',guestAttempt.amount_minor,1500);
+  await denied('unauthorized guest cannot prepare checkout','select public.prepare_payment_attempt($1,null,$2,$3,$4)',[guestAppointment,'b'.repeat(64),'test-provider',randomUUID()],/Not authorized/);
+  await actor('anon');
+  await denied('anonymous cannot call payment preparation','select public.prepare_payment_attempt($1,null,$2,$3,$4)',[guestAppointment,guestTokenHash,'test-provider',randomUUID()],/permission denied/);
+  await denied('anonymous cannot attach provider checkout','select public.attach_payment_checkout($1,$2,$3)',[guestAttempt.payment_id,'ref','https://checkout.example.test/session'],/permission denied/);
+  await denied('anonymous cannot call acceptance','select public.accept_appointment($1)',[autoCash],/permission denied/);
+  await denied('anonymous cannot call expiration','select public.expire_due_payments()',[],/permission denied/);
+  await denied('anonymous cannot call protected booking','select public.server_public_booking_submit(null,null,null,null,null,null,null,null)',[],/permission denied/);
+  await actor('authenticated',ids.customerTwo);
+  equal('other customer cannot see booking',await scalar('select count(*)::int from public.appointments where id=$1',[autoCash]),0);
+  await actor('authenticated',ids.customerOne);
+  equal('owner customer sees updated state',await state(autoCash),'CONFIRMED');
+  console.log(`PASS: ${checks} Phase 8 lifecycle, policy, payment and authorization database checks.`);
+} finally { await db.close(); }

@@ -1,0 +1,3 @@
+-- Intentionally empty: migrations never invent a business or a privileged user.
+-- Provision business settings, policy v1, hours, services and staff per deployment.
+-- See docs/deployment/supabase-setup.md for the controlled owner bootstrap.
