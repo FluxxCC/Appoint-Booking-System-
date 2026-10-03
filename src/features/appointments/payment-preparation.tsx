@@ -2,14 +2,15 @@ import "server-only";
 import Link from "next/link";
 import { money } from "@/features/public-site/model";
 import { formatBusinessTime } from "@/lib/time";
-import { isPayMongoTestConfigured } from "@/lib/payments/paymongo.server";
+import { isPayMongoConfigured } from "@/lib/payments/paymongo.server";
 import { supportsPayMongoCurrency } from "@/lib/payments/paymongo-core";
 import { PaymentOnlineButton } from "./payment-online-button";
+import { PaymentStatusCheck } from "./payment-status-check";
 
 export function PaymentPreparation({ appointmentId, amount, currency, deadline, timezone, contactEmail }: {
   appointmentId: string; amount: number; currency: string; deadline: string | null; timezone: string; contactEmail?: string | null;
 }) {
-  const available = isPayMongoTestConfigured()
+  const available = isPayMongoConfigured()
     && supportsPayMongoCurrency(currency)
     && /^[0-9a-f-]{36}$/i.test(appointmentId)
     && Number.isSafeInteger(amount) && amount > 0
@@ -22,5 +23,6 @@ export function PaymentPreparation({ appointmentId, amount, currency, deadline, 
       <button type="button" disabled aria-describedby="payment-unavailable" className="rounded-full bg-line px-5 py-3 font-semibold text-ink">Pay online</button>
       <p id="payment-unavailable" className="text-sm text-ink">Online payment is currently unavailable. {contactEmail ? <>Contact <Link href={`mailto:${contactEmail}`} className="font-semibold underline">the business</Link> for payment instructions.</> : "Contact the business for payment instructions."}</p>
     </div>}
+    <PaymentStatusCheck appointmentId={appointmentId} />
   </section>;
 }

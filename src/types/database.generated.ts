@@ -378,6 +378,7 @@ export type Database = { public: { Tables: {
       guest_booking_enabled: boolean;
       customer_registration_enabled: boolean;
       booking_approval_mode: string;
+      refund_policy: string;
     };
     Insert: {
       id?: string;
@@ -398,6 +399,7 @@ export type Database = { public: { Tables: {
       guest_booking_enabled?: boolean;
       customer_registration_enabled?: boolean;
       booking_approval_mode?: string;
+      refund_policy?: string;
     };
     Update: {
       id?: string;
@@ -418,6 +420,7 @@ export type Database = { public: { Tables: {
       guest_booking_enabled?: boolean;
       customer_registration_enabled?: boolean;
       booking_approval_mode?: string;
+      refund_policy?: string;
     };
     Relationships: [];
   };

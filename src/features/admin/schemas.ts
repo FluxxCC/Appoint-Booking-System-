@@ -13,7 +13,7 @@ export const settingsSchema = z.object({
   scheduling_interval_minutes: integer(5,120), default_buffer_minutes: integer(0,240),
   minimum_notice_minutes: integer(0,1051200), maximum_advance_days: integer(1,730), payment_window_minutes: integer(1,1440),
   require_staff_approval: z.literal(true), guest_booking_enabled: z.boolean(), customer_registration_enabled: z.boolean(),
-  terms: z.string().trim().min(1).max(10000), expected_updated_at: z.string().max(100),
+  terms: z.string().trim().min(1).max(10000), refund_policy: z.string().trim().min(1).max(10000), expected_updated_at: z.string().max(100),
 }).refine(v => v.minimum_notice_minutes < v.maximum_advance_days * 1440, { path: ["minimum_notice_minutes"], message: "Lead time must be shorter than the advance booking window." });
 
 export const hoursSchema = z.array(z.object({ weekday: z.number().int().min(0).max(6), opens_at: timeSchema, closes_at: timeSchema })

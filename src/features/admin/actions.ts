@@ -21,7 +21,7 @@ const string = (form: FormData, key: string) => form.get(key) ?? "";
 const checked = (form: FormData, key: string) => form.get(key)==="on";
 export async function saveSettings(_state: FormState, form: FormData): Promise<FormState> {
   const {supabase} = await requireArea("admin");
-  const keys=["name","description","contact_email","contact_phone","address","timezone","currency","scheduling_interval_minutes","default_buffer_minutes","minimum_notice_minutes","maximum_advance_days","payment_window_minutes","terms","expected_updated_at"];
+  const keys=["name","description","contact_email","contact_phone","address","timezone","currency","scheduling_interval_minutes","default_buffer_minutes","minimum_notice_minutes","maximum_advance_days","payment_window_minutes","terms","refund_policy","expected_updated_at"];
   const parsed=settingsSchema.safeParse({ ...Object.fromEntries(keys.map(k=>[k,string(form,k)])), require_staff_approval: true, guest_booking_enabled:checked(form,"guest_booking_enabled"),customer_registration_enabled:checked(form,"customer_registration_enabled") });
   if (!parsed.success) return invalid(parsed.error);
   const {error}=await supabase.rpc("admin_save_settings",{p_values:parsed.data});

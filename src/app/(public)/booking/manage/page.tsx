@@ -34,7 +34,7 @@ export default async function ManageGuestBooking({ searchParams }: { searchParam
       <p className="text-lg font-semibold">{appointmentStatus(state)}</p>
       <p className="mt-4 font-medium">{String(appointment.service_name)}</p>
       <p className="text-sm text-muted">With {String(appointment.staff_name)} · {formatBusinessTime(String(appointment.starts_at), zone)}</p>
-      <p className="mt-3 text-sm text-muted">{money(Number(appointment.total_amount), currency)} · {state === "PAYMENT_EXPIRED" ? "Payment window expired; time released" : appointment.payment_mode === "PAY_AT_BUSINESS" ? "Pay at the business" : state === "AWAITING_PAYMENT" ? `${money(required, currency)} required` : "Payment required only after acceptance"}</p>
+      <p className="mt-3 text-sm text-muted">{money(Number(appointment.total_amount), currency)} · {state === "PAYMENT_EXPIRED" ? "Payment window expired; time released" : state === "CONFIRMED" && appointment.payment_mode !== "PAY_AT_BUSINESS" ? `${money(required, currency)} payment received` : appointment.payment_mode === "PAY_AT_BUSINESS" ? "Pay at the business" : state === "AWAITING_PAYMENT" ? `${money(required, currency)} required` : "Payment required only after acceptance"}</p>
     </div>
     <p className="mt-5 text-sm leading-6 text-muted">{bookingGuidance(state)}</p>
     {state === "AWAITING_PAYMENT" && <PaymentPreparation appointmentId={String(appointment.id)} amount={required} currency={currency} deadline={appointment.payment_due_at ? String(appointment.payment_due_at) : null} timezone={zone} contactEmail={site.business?.contact_email} />}

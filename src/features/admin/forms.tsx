@@ -40,7 +40,8 @@ export function SettingsForm({data}:{data:AdminData}) {
     {name:"guest_booking_enabled",label:"Enable future guest booking",type:"checkbox",value:b?.guest_booking_enabled??true},
     {name:"customer_registration_enabled",label:"Enable customer registration",type:"checkbox",value:b?.customer_registration_enabled??true,hint:"Disabling blocks new self-registration. Existing accounts and owner-issued staff invitations remain available."},
     {name:"terms",label:"Booking policy terms",type:"textarea",value:p?.terms??"",maxLength:10000,required:true,hint:"Saving changed booking rules publishes a new policy version. Existing requests retain their original policy."},
-  ]}><p className="rounded-lg bg-canvas p-3 text-sm text-muted">Payment is required only after a request reserves its slot. Changing these rules publishes a new policy version; existing booking snapshots remain unchanged.</p></Form>;
+    {name:"refund_policy",label:"Refund policy",type:"textarea",value:b?.refund_policy??"",maxLength:10000,required:true,hint:"This text appears on the public refund policy page. Review and edit it for your business before publishing."},
+  ]}><p className="rounded-lg bg-canvas p-3 text-sm text-muted">Payment is required only after a request reserves its slot. Changing booking rules publishes a new policy version; the refund policy is saved with business settings and shown publicly.</p></Form>;
 }
 export function ApprovalModeForm({mode}:{mode:string}) {
   return <Form action={saveApprovalMode} submit="Save approval mode" fields={[{name:"mode",label:"How requests are approved",value:mode,required:true,options:[

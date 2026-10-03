@@ -1,7 +1,7 @@
 import "server-only";
 import { createHash } from "node:crypto";
 
-export type RateLimitPolicy = "availability" | "booking" | "recovery" | "checkout" | "guestAccess";
+export type RateLimitPolicy = "availability" | "booking" | "recovery" | "checkout" | "guestAccess" | "paymentVerify";
 export type RateLimitDecision = { allowed: boolean; retryAfterSeconds: number; unavailable?: boolean };
 
 const policies: Record<RateLimitPolicy, { windowMs: number; limit: number }> = {
@@ -10,6 +10,7 @@ const policies: Record<RateLimitPolicy, { windowMs: number; limit: number }> = {
   recovery: { windowMs: 15 * 60_000, limit: 4 },
   guestAccess: { windowMs: 15 * 60_000, limit: 16 },
   checkout: { windowMs: 15 * 60_000, limit: 8 },
+  paymentVerify: { windowMs: 60_000, limit: 12 },
 };
 const localWindows = new Map<string, { start: number; count: number }>();
 const MAX_LOCAL_KEYS = 10_000;

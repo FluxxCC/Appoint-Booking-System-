@@ -1,11 +1,11 @@
 import { describe,it,expect } from "vitest";
 import { settingsSchema,hoursSchema,closureSchema,announcementSchema,filtersSchema } from "../../src/features/admin/schemas";
 import { localInput,money,shiftDate } from "../../src/features/admin/format";
-const settings={name:"Studio",description:"",contact_email:"studio@example.test",contact_phone:"+639171234567",address:"",timezone:"Asia/Manila",currency:"PHP",scheduling_interval_minutes:15,default_buffer_minutes:5,minimum_notice_minutes:60,maximum_advance_days:90,payment_window_minutes:30,require_staff_approval:true,guest_booking_enabled:true,customer_registration_enabled:true,terms:"Policy terms",expected_updated_at:""};
+const settings={name:"Studio",description:"",contact_email:"studio@example.test",contact_phone:"+639171234567",address:"",timezone:"Asia/Manila",currency:"PHP",scheduling_interval_minutes:15,default_buffer_minutes:5,minimum_notice_minutes:60,maximum_advance_days:90,payment_window_minutes:30,require_staff_approval:true,guest_booking_enabled:true,customer_registration_enabled:true,terms:"Policy terms",refund_policy:"Refund requests are reviewed individually by the business.",expected_updated_at:""};
 describe("business configuration",()=>{
   it("validates business and scheduling settings",()=>{
     expect(settingsSchema.safeParse(settings).success).toBe(true);
-    for(const patch of [{name:""},{contact_email:"invalid"},{timezone:"Invalid/Zone"},{currency:"ZZZ"},{scheduling_interval_minutes:0},{default_buffer_minutes:-1},{payment_window_minutes:1441},{minimum_notice_minutes:1500,maximum_advance_days:1},{require_staff_approval:false}]) expect(settingsSchema.safeParse({...settings,...patch}).success).toBe(false);
+    for(const patch of [{name:""},{contact_email:"invalid"},{timezone:"Invalid/Zone"},{currency:"ZZZ"},{scheduling_interval_minutes:0},{default_buffer_minutes:-1},{payment_window_minutes:1441},{minimum_notice_minutes:1500,maximum_advance_days:1},{require_staff_approval:false},{refund_policy:""}]) expect(settingsSchema.safeParse({...settings,...patch}).success).toBe(false);
   });
   it("allows closed days, split shifts and adjacent intervals",()=>{
     expect(hoursSchema.safeParse([]).success).toBe(true);

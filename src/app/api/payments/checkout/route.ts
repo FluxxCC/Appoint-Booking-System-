@@ -1,7 +1,7 @@
 import "server-only";
 import { z } from "zod";
 import { startPaymentCheckout } from "@/lib/payments/checkout.server";
-import { createPayMongoProvider, isPayMongoTestConfigured } from "@/lib/payments/paymongo.server";
+import { createPayMongoProvider, isPayMongoConfigured } from "@/lib/payments/paymongo.server";
 import { consumeRateLimit, trustedClientIdentifier } from "@/features/availability/rate-limit.server";
 import { siteUrl } from "@/lib/auth/site-url.server";
 
@@ -32,7 +32,7 @@ export async function POST(request: Request) {
     response.headers.set("Retry-After", String(limit.retryAfterSeconds));
     return response;
   }
-  if (!isPayMongoTestConfigured()) return returnTo(request, "unavailable");
+  if (!isPayMongoConfigured()) return returnTo(request, "unavailable");
 
   try {
     if (Number(request.headers.get("content-length") ?? 0) > 8_192) return returnTo(request, "unavailable");

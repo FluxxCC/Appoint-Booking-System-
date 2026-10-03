@@ -16,11 +16,12 @@ Configure these in the Vercel project's **Production** environment before its fi
 | `UPSTASH_REDIS_REST_TOKEN` | Server-only | Shared production rate limiting | Missing locally; required before public deployment |
 | `PAYMONGO_SECRET_KEY` | Server-only | PayMongo TEST Hosted Checkout | Configured with a TEST key |
 | `PAYMONGO_TEST_MODE_ENABLED` | Server-only feature flag | Explicitly enable PayMongo TEST Checkout in a Vercel production runtime | Missing locally; set to `true` in the Vercel demo environment |
+| `PAYMONGO_LIVE_MODE_ENABLED` | Server-only feature flag | Enable LIVE PayMongo only in a separate, intended production payment environment | Leave unset/false for this public test/demo |
 | `PAYMONGO_WEBHOOK_SECRET` | Server-only | Accept signed PayMongo TEST webhooks | Not configured; obtain after registering the TEST webhook |
 | `RESEND_API_KEY` | Server-only | Guest recovery and transactional email | Configured locally |
 | `RESEND_FROM_EMAIL` | Server-side sender identity | Guest recovery and transactional email | Configured locally with the verified Zentra sender |
 
-`PAYMONGO_TEST_MODE_ENABLED=true` is a strict production opt-in. Checkout still requires a key with the TEST prefix; live keys are rejected even when this flag is enabled. This flag does not enable live payments.
+`PAYMONGO_TEST_MODE_ENABLED=true` is a strict production opt-in. Checkout still requires a key with the TEST prefix; live keys are rejected even when this flag is enabled. This flag does not enable live payments. Keep this demo connected to the development/test Supabase project and do not enable LIVE charges here. Live deployment configuration is documented in `docs/payments/paymongo-test-setup.md`.
 
 `RESEND_API_KEY` and `RESEND_FROM_EMAIL` are optional for basic browsing and booking, but required for guest recovery and application transactional email. Supabase Auth confirmation, recovery and invitation email delivery is configured separately in Supabase Dashboard → Authentication → SMTP Settings; it does not use the Resend API variables above.
 
@@ -38,7 +39,7 @@ Before the first deployment:
 2. Add the environment variables in the table above that are available. Use the existing development/test Supabase project URL and publishable key, its server-only secret, the PayMongo TEST secret key, `PAYMONGO_TEST_MODE_ENABLED=true`, both Upstash values, and the existing verified Resend sender configuration.
 3. Set `NEXT_PUBLIC_SITE_URL` to `https://appointmentdemo.zentra.surf`.
 4. Leave `PAYMONGO_WEBHOOK_SECRET` unset until the endpoint has been registered in PayMongo TEST mode. Webhook calls return a safe service-unavailable response until it is configured; unrelated pages continue to work.
-5. Deploy a preview first and confirm the app loads. Then deploy the public demo once the rate limiter and environment are ready.
+5. Deploy a preview first and confirm the app loads. Then deploy the public demo once the rate limiter and environment are ready. Keep `PAYMONGO_LIVE_MODE_ENABLED` unset/false.
 
 Any change to a Vercel environment variable requires a new deployment to take effect.
 
@@ -70,7 +71,7 @@ After HTTPS is active:
 2. Under Developers → Webhooks, add `https://appointmentdemo.zentra.surf/api/webhooks/paymongo` and subscribe to `checkout_session.payment.paid`.
 3. Copy that endpoint's TEST signing secret into Vercel as `PAYMONGO_WEBHOOK_SECRET` (server-only), then redeploy.
 4. Create a disposable guest TEST booking, approve it if the business requires approval, and select **Pay online** after it reaches `AWAITING_PAYMENT`. This creates a checkout that can be matched to the application’s pending payment; an unrelated synthetic paid event may be rejected because it has no matching checkout.
-5. Complete the hosted checkout using the PayMongo TEST payment details. The browser return alone must leave payment unconfirmed; the signed webhook must settle it.
+5. Complete the hosted checkout using the PayMongo TEST payment details. The browser return alone never confirms payment; a server-side PayMongo session check or the signed webhook must verify and settle it.
 6. Verify PayMongo’s webhook delivery record and the payment and event records, guest booking status, admin payment view, and transactional confirmation email. Redeliver the same event and confirm it has no duplicate settlement effect. Do not test with a live payment method or live credential.
 
 ## Security and serving behavior

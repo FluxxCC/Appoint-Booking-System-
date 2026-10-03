@@ -26,10 +26,12 @@ try {
  await actor('authenticated',ids.admin,'aal2');
  equal('empty dashboard uses zero', (await read('dashboard')).stats.today,0);
  await save(values);
- let data=await read('settings');equal('settings persisted',data.business.name,'Studio');equal('first policy published',data.policy.version,1);
+ let data=await read('settings');equal('settings persisted',data.business.name,'Studio');equal('first policy published',data.policy.version,1);equal('legacy settings save receives refund policy default',data.business.refund_policy.startsWith('Refund requests are reviewed individually'),true);
  await denied('stale settings rejected','select public.admin_save_settings($1)',[JSON.stringify(values)],/reload/);
  await save({...values,expected_updated_at:data.expected_updated_at,payment_window_minutes:45});
- data=await read('settings');equal('policy version advanced',data.policy.version,2);
+ data=await read('settings');equal('policy version advanced',data.policy.version,2);equal('legacy settings save preserves refund policy',data.business.refund_policy.startsWith('Refund requests are reviewed individually'),true);
+ await save({...values,expected_updated_at:data.expected_updated_at,refund_policy:'Policy edited by an administrator.'});
+ data=await read('settings');equal('admin can edit persisted refund policy',data.business.refund_policy,'Policy edited by an administrator.');
  equal('original policy unchanged',await scalar('select payment_window_minutes from public.booking_policy_versions where version=1'),30);
  await denied('staff confirmation cannot be disabled','select public.admin_save_settings($1)',[JSON.stringify({...values,expected_updated_at:data.expected_updated_at,require_staff_approval:false})]);
  const hours=Array.from({length:7},(_,weekday)=>({weekday,opens_at:'08:00',closes_at:'20:00'}));

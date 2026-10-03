@@ -7,5 +7,6 @@ export type PublicWebsite = {
  hours: { weekday: number; opens_at: string; closes_at: string }[];
  announcements: { title: string; body: string; starts_at: string; ends_at: string | null }[];
  policy: null | { terms: string; minimum_notice_minutes: number; maximum_advance_days: number; cancellation_notice_minutes: number };
+  refund_policy: string | null;
 };
 export function money(amount: number, currency: string) { return new Intl.NumberFormat("en", { style: "currency", currency }).format(amount / 100); }

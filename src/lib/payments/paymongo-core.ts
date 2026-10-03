@@ -2,11 +2,23 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import type { AcceptedPaymentRequest, VerifiedProviderPayment } from "./provider";
 
-export const paymongoTestApi = "https://api.paymongo.com/v2/checkout_sessions";
+export const paymongoApi = "https://api.paymongo.com/v2/checkout_sessions";
 const signatureToleranceSeconds = 5 * 60;
+
+export type PayMongoMode = "test" | "live";
 
 export function isTestSecretKey(value: string | undefined): boolean {
   return typeof value === "string" && value.trim().startsWith("sk_test_");
+}
+
+export function isLiveSecretKey(value: string | undefined): boolean {
+  return typeof value === "string" && value.trim().startsWith("sk_live_");
+}
+
+export function modeForSecretKey(value: string | undefined): PayMongoMode | null {
+  if (isTestSecretKey(value)) return "test";
+  if (isLiveSecretKey(value)) return "live";
+  return null;
 }
 
 export function supportsPayMongoCurrency(currency: string): boolean {
@@ -30,8 +42,10 @@ export function buildCheckoutSessionBody(request: AcceptedPaymentRequest, origin
 
   const returnUrl = new URL("/payment/return", site);
   returnUrl.searchParams.set("result", "checking");
+  returnUrl.searchParams.set("appointmentId", request.appointmentId);
   const cancelUrl = new URL("/payment/return", site);
   cancelUrl.searchParams.set("result", "cancelled");
+  cancelUrl.searchParams.set("appointmentId", request.appointmentId);
 
   return {
     data: {
@@ -53,10 +67,11 @@ export function buildCheckoutSessionBody(request: AcceptedPaymentRequest, origin
   };
 }
 
-export function verifyPayMongoTestSignature(
+export function verifyPayMongoSignature(
   rawBody: Uint8Array,
   signatureHeader: string | null,
   webhookSecret: string,
+  mode: PayMongoMode,
   nowMs = Date.now(),
 ): boolean {
   if (!signatureHeader || !webhookSecret.trim()) return false;
@@ -70,7 +85,7 @@ export function verifyPayMongoTestSignature(
     parts.set(name, value);
   }
   const timestamp = parts.get("t");
-  const signature = parts.get("te");
+  const signature = parts.get(mode === "test" ? "te" : "li");
   if (!timestamp || !/^\d{1,12}$/.test(timestamp) || !signature || !/^[a-f0-9]{64}$/i.test(signature)) return false;
   const timestampSeconds = Number(timestamp);
   if (!Number.isSafeInteger(timestampSeconds) || Math.abs(Math.floor(nowMs / 1000) - timestampSeconds) > signatureToleranceSeconds) return false;
@@ -101,7 +116,7 @@ function readPaidAt(value: unknown, fallback: unknown): string | null {
 }
 
 /** Parses the documented v2 Hosted Checkout webhook only after its raw bytes verify. */
-export function parsePayMongoWebhook(value: unknown): VerifiedProviderPayment | { ignored: true } {
+export function parsePayMongoWebhook(value: unknown, mode: PayMongoMode): VerifiedProviderPayment | { ignored: true } {
   const root = object(value);
   const envelope = object(root?.data);
   const attributes = object(envelope?.attributes);
@@ -109,12 +124,13 @@ export function parsePayMongoWebhook(value: unknown): VerifiedProviderPayment | 
   if (eventType !== "checkout_session.payment.paid") return { ignored: true };
 
   const liveMode = envelope?.livemode ?? attributes?.livemode;
-  if (liveMode !== false) throw new Error("Unexpected PayMongo mode.");
+  const expectedLiveMode = mode === "live";
+  if (liveMode !== expectedLiveMode) throw new Error("Unexpected PayMongo mode.");
   const resource = object(envelope?.data ?? attributes?.data);
   const resourceAttributes = object(resource?.attributes);
   const sessionId = text.safeParse(resource?.id);
   if (!sessionId.success || !sessionId.data.startsWith("cs_")) throw new Error("Invalid checkout session event.");
-  if (resourceAttributes?.livemode !== undefined && resourceAttributes.livemode !== false) throw new Error("Unexpected PayMongo mode.");
+  if (resourceAttributes?.livemode !== undefined && resourceAttributes.livemode !== expectedLiveMode) throw new Error("Unexpected PayMongo mode.");
 
   const intent = object(resourceAttributes?.payment_intent);
   const intentAttributes = object(intent?.attributes);
@@ -131,7 +147,7 @@ export function parsePayMongoWebhook(value: unknown): VerifiedProviderPayment | 
   if (!paymentId.success || !paymentId.data.startsWith("pay_") || !amount.success || !currency.success || !paidAt) {
     throw new Error("Checkout payment details are invalid.");
   }
-  if (paymentAttributes?.livemode !== undefined && paymentAttributes.livemode !== false) throw new Error("Unexpected PayMongo mode.");
+  if (paymentAttributes?.livemode !== undefined && paymentAttributes.livemode !== expectedLiveMode) throw new Error("Unexpected PayMongo mode.");
 
   const eventId = text.safeParse(envelope?.id ?? root?.id);
   return {

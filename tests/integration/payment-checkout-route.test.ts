@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   startPaymentCheckout: vi.fn(),
   createPayMongoProvider: vi.fn(),
-  isPayMongoTestConfigured: vi.fn(),
+  isPayMongoConfigured: vi.fn(),
   consumeRateLimit: vi.fn(),
   trustedClientIdentifier: vi.fn(),
 }));
@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/lib/payments/checkout.server", () => ({ startPaymentCheckout: mocks.startPaymentCheckout }));
 vi.mock("@/lib/payments/paymongo.server", () => ({
   createPayMongoProvider: mocks.createPayMongoProvider,
-  isPayMongoTestConfigured: mocks.isPayMongoTestConfigured,
+  isPayMongoConfigured: mocks.isPayMongoConfigured,
 }));
 vi.mock("@/features/availability/rate-limit.server", () => ({
   consumeRateLimit: mocks.consumeRateLimit,
@@ -40,7 +40,7 @@ beforeEach(() => {
   vi.stubEnv("NEXT_PUBLIC_SITE_URL", siteOrigin);
   vi.clearAllMocks();
   mocks.consumeRateLimit.mockResolvedValue({ allowed: true, retryAfterSeconds: 1 });
-  mocks.isPayMongoTestConfigured.mockReturnValue(true);
+  mocks.isPayMongoConfigured.mockReturnValue(true);
   mocks.createPayMongoProvider.mockReturnValue({ id: "paymongo-test-provider" });
   mocks.startPaymentCheckout.mockResolvedValue({
     checkoutUrl: "https://checkout.paymongo.com/cs_test_checkout",
