@@ -1,16 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 type Status = "paid" | "review" | "pending" | "unavailable";
 
 export function PaymentStatusCheck({ appointmentId }: { appointmentId: string }) {
   const router = useRouter();
-  const [status, setStatus] = useState<Status | null>(null);
-  const [pending, setPending] = useState(false);
+  const [status, setStatus] = useState<Status | "checking">("checking");
+  const [pending, setPending] = useState(true);
+  const checkedAppointment = useRef<string | null>(null);
 
-  async function check() {
+  const check = useCallback(async () => {
     setPending(true);
     try {
       const response = await fetch("/api/payments/verify", {
@@ -23,13 +24,19 @@ export function PaymentStatusCheck({ appointmentId }: { appointmentId: string })
       const next = response.ok && body.status && ["paid", "review", "pending", "unavailable"].includes(body.status)
         ? body.status : "unavailable";
       setStatus(next);
-      if (next === "paid" || next === "review") router.refresh();
+      if (next === "paid") router.refresh();
     } catch {
       setStatus("unavailable");
     } finally {
       setPending(false);
     }
-  }
+  }, [appointmentId, router]);
+
+  useEffect(() => {
+    if (checkedAppointment.current === appointmentId) return;
+    checkedAppointment.current = appointmentId;
+    void check();
+  }, [appointmentId, check]);
 
   const message = status === "paid"
     ? "PayMongo verified your payment. Your booking is reserved."
@@ -39,10 +46,12 @@ export function PaymentStatusCheck({ appointmentId }: { appointmentId: string })
         ? "No completed payment is verified yet. If you just paid, wait a moment and check again."
         : status === "unavailable"
           ? "Payment status could not be checked right now. Your booking has not been marked paid. Try again or contact the business."
-          : "Already completed payment? Check PayMongo's verified status here.";
+          : status === "checking"
+            ? "Checking PayMongo's verified payment status…"
+            : "Already completed payment? Check PayMongo's verified status here.";
 
   return <div className="mt-4 rounded-xl border border-line p-4">
     <p aria-live="polite" className="text-sm leading-6 text-muted">{message}</p>
-    <button type="button" onClick={check} disabled={pending} className="button-secondary mt-3 disabled:opacity-60">{pending ? "Checking…" : "Check payment status"}</button>
+    <button type="button" onClick={() => void check()} disabled={pending} className="button-secondary mt-3 disabled:opacity-60">{pending ? "Checking…" : "Check payment status"}</button>
   </div>;
 }
