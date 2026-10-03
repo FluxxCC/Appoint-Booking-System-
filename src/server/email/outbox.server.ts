@@ -8,7 +8,7 @@ import type { Database } from "@/types/database.generated";
 import { sendTransactionalEmail } from "./send-email";
 import { appointmentEmailKind } from "./lifecycle";
 import { operationalRecipientScope, resolveCustomerEmail, resolveStaffEmail } from "./recipients";
-import { renderAppointmentEmail, type AppointmentEmailDetails, type EmailBusiness } from "./templates";
+import { renderAppointmentEmail, renderGuestAccessEmail, type AppointmentEmailDetails, type EmailBusiness } from "./templates";
 import type { EmailDeliveryResult } from "./types";
 
 type OutboxRow = Database["public"]["Tables"]["notification_outbox"]["Row"];
@@ -29,6 +29,7 @@ function keyFor(deduplicationKey: string, recipient: string, role: string) {
 async function send(input: AppointmentEmailDetails) {
   const result = await sendTransactionalEmail(renderAppointmentEmail(input));
   if (!result.ok) throw new DeliveryFailure(result.code, result.retryable);
+  return result.id;
 }
 
 async function loadBusiness() {
@@ -112,7 +113,10 @@ async function adminRecipients(client: ReturnType<typeof createPrivilegedClient>
 }
 
 async function appointmentCta(client: ReturnType<typeof createPrivilegedClient>, appointment: Pick<AppointmentRow, "id">, customerEmail: string, guest: boolean) {
-  if (!guest) return `${siteUrl()}/account/appointments`;
+  if (!guest) {
+    const path = `/account/appointments/${appointment.id}`;
+    return `${siteUrl()}/auth/continue?next=${encodeURIComponent(path)}`;
+  }
   const { data, error } = await client.rpc("issue_guest_access_link", {
     p_email: customerEmail.trim().toLowerCase(), p_reference: null, p_appointment: appointment.id,
   });
@@ -122,7 +126,19 @@ async function appointmentCta(client: ReturnType<typeof createPrivilegedClient>,
 }
 
 async function sendToRecipient(input: Omit<AppointmentEmailDetails, "idempotencyKey">, job: OutboxRow, role: string) {
-  await send({ ...input, idempotencyKey: keyFor(job.deduplication_key, input.to, role) });
+  const idempotencyKey = keyFor(job.deduplication_key, input.to, role);
+  const messageId = await send({ ...input, idempotencyKey });
+  await recordDelivery(job, idempotencyKey, role, messageId);
+}
+
+async function recordDelivery(job: OutboxRow, idempotencyKey: string, role: string, messageId: string) {
+  const { data, error } = await createPrivilegedClient().rpc("record_notification_delivery", {
+    p_outbox_id: job.id,
+    p_idempotency_key: idempotencyKey,
+    p_recipient_role: role,
+    p_provider_message_id: messageId,
+  });
+  if (error || data !== true) throw new DeliveryFailure("provider_error", true);
 }
 
 async function deliverStateChanged(job: OutboxRow) {
@@ -163,6 +179,7 @@ async function deliverStateChanged(job: OutboxRow) {
       to: recipient.email, kind, reference: context.appointment.public_reference,
       serviceName: context.serviceName, staffName: context.staff.display_name,
       startsAt: context.appointment.starts_at, timezone: business.timezone, business: brand, ctaUrl,
+      ctaLabel: recipient.guest ? "View booking" : "View appointment",
       declineReason: kind === "booking.declined" && event.reason
         ? event.reason.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 500) || undefined
         : undefined,
@@ -176,7 +193,8 @@ async function deliverStateChanged(job: OutboxRow) {
   if (operationsScope === "assigned_staff") {
     const email = await staffRecipient(client, context.staff.auth_user_id, context.staff.active);
     if (email) {
-      const ctaUrl = `${siteUrl()}/staff/appointments`;
+      const staffPath = `/staff/appointments?focus=${context.appointment.id}#appointment-${context.appointment.id}`;
+      const ctaUrl = `${siteUrl()}/auth/continue?next=${encodeURIComponent(staffPath)}`;
       sends.push(sendToRecipient({
         to: email, kind: "business.new_booking", reference: context.appointment.public_reference,
         serviceName: context.serviceName, staffName: context.staff.display_name,
@@ -185,7 +203,7 @@ async function deliverStateChanged(job: OutboxRow) {
     }
   } else if (operationsScope === "admin_ops") {
     const recipients = await adminRecipients(client);
-    const ctaUrl = `${siteUrl()}/admin/appointments`;
+    const ctaUrl = `${siteUrl()}/auth/continue?next=${encodeURIComponent(`/admin/appointments/${context.appointment.id}`)}`;
     for (const recipient of recipients) {
       sends.push(sendToRecipient({
         to: recipient.email, kind: "business.new_booking", reference: context.appointment.public_reference,
@@ -221,13 +239,45 @@ async function deliverPaymentException(job: OutboxRow) {
   }, job, "business_contact");
 }
 
+async function deliverGuestAccess(job: OutboxRow) {
+  if (!job.appointment_id) throw new DeliveryFailure("unsupported_event", false);
+  const { client, data: business } = await loadBusiness();
+  const { data: appointment, error: appointmentError } = await client.from("appointments")
+    .select("id,public_reference,customer_id").eq("id", job.appointment_id).maybeSingle();
+  if (appointmentError || !appointment) throw new DeliveryFailure("provider_error", true);
+  const { data: customer, error: customerError } = await client.from("customers")
+    .select("email,auth_user_id").eq("id", appointment.customer_id).maybeSingle();
+  if (customerError || !customer) throw new DeliveryFailure("provider_error", true);
+  if (customer.auth_user_id) throw new DeliveryFailure("no_recipient", false);
+  const recipient = resolveCustomerEmail({ authUserId: null, storedEmail: customer.email });
+  if (!recipient) throw new DeliveryFailure("no_recipient", false);
+  const { data, error } = await client.rpc("issue_guest_access_link", {
+    p_email: recipient.email.trim().toLowerCase(), p_reference: null, p_appointment: appointment.id,
+  });
+  const parsed = guestLink.safeParse(data);
+  if (error || !parsed.success || parsed.data.appointment_id !== appointment.id) {
+    throw new DeliveryFailure("provider_error", true);
+  }
+  const idempotencyKey = keyFor(job.deduplication_key, recipient.email, "guest");
+  const result = await sendTransactionalEmail(renderGuestAccessEmail({
+    to: recipient.email,
+    reference: appointment.public_reference,
+    bookingUrl: `${siteUrl()}/booking/access#token=${encodeURIComponent(parsed.data.token)}`,
+    businessName: business.name,
+    idempotencyKey,
+  }));
+  if (!result.ok) throw new DeliveryFailure(result.code, result.retryable);
+  await recordDelivery(job, idempotencyKey, "guest", result.id);
+}
+
 async function processJob(client: ReturnType<typeof createPrivilegedClient>, job: OutboxRow) {
   try {
     if (job.kind === "APPOINTMENT_STATE_CHANGED") await deliverStateChanged(job);
     else if (job.kind === "PAYMENT_EXCEPTION") await deliverPaymentException(job);
+    else if (job.kind === "GUEST_ACCESS_REQUESTED") await deliverGuestAccess(job);
     else throw new DeliveryFailure("unsupported_event", false);
-    const { error } = await client.rpc("finish_notification_outbox", { p_id: job.id, p_success: true, p_retryable: false, p_error_code: null });
-    if (error) throw new Error("Outbox acknowledgment failed.");
+    const { data, error } = await client.rpc("finish_notification_outbox", { p_id: job.id, p_success: true, p_retryable: false, p_error_code: null });
+    if (error || data !== true) throw new Error("Outbox acknowledgment failed.");
     return "delivered" as const;
   } catch (error) {
     const failure = error instanceof DeliveryFailure ? error : new DeliveryFailure("network_error", true);
@@ -245,8 +295,15 @@ async function processJob(client: ReturnType<typeof createPrivilegedClient>, job
 export async function dispatchNotificationOutbox(batchSize = 20) {
   const client = createPrivilegedClient();
   const { data, error } = await client.rpc("claim_notification_outbox", { p_limit: Math.min(Math.max(batchSize, 1), 50) });
-  if (error || !data) throw new Error("Notification delivery is temporarily unavailable.");
-  const jobs = data as unknown as OutboxRow[];
+  if (error || data === null) throw new Error("Notification delivery is temporarily unavailable.");
+  let claimed: unknown = data;
+  if (typeof claimed === "string") {
+    try { claimed = JSON.parse(claimed) as unknown; } catch { claimed = null; }
+  }
+  const jobs = Array.isArray(claimed) && claimed.every(row => row && typeof row === "object" &&
+    typeof (row as { id?: unknown }).id === "string" && typeof (row as { kind?: unknown }).kind === "string")
+    ? claimed as OutboxRow[] : null;
+  if (!jobs) throw new Error("Notification delivery is temporarily unavailable.");
   let delivered = 0, retrying = 0, failed = 0;
   // Keep provider pressure bounded while avoiding serial max-duration calls.
   for (let index = 0; index < jobs.length; index += 5) {

@@ -30,3 +30,19 @@ export function landingPath(principal: Principal): string {
 export function safeAuthDestination(value: string | null | undefined): string {
   return ["/account", "/admin", "/staff", "/reset-password"].includes(value ?? "") ? value! : "/account";
 }
+
+const idPattern = "[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}";
+
+/** Strict same-origin destinations supported by appointment email links. */
+export function safeAppointmentDestination(value: string | null | undefined): string | null {
+  if (!value || value.length > 512 || !value.startsWith("/") || value.startsWith("//") || /[\\\u0000-\u001f\u007f]/.test(value)) return null;
+  const match = new RegExp(`^/account/appointments/(${idPattern})$`, "i").exec(value);
+  if (match) return `/account/appointments/${match[1]}`;
+  const admin = new RegExp(`^/admin/appointments/(${idPattern})$`, "i").exec(value);
+  if (admin) return `/admin/appointments/${admin[1]}`;
+  const staff = new RegExp(`^/staff/appointments\\?focus=(${idPattern})#appointment-(${idPattern})$`, "i").exec(value);
+  if (staff && staff[1].toLowerCase() === staff[2].toLowerCase()) {
+    return `/staff/appointments?focus=${staff[1]}#appointment-${staff[2]}`;
+  }
+  return null;
+}

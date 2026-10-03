@@ -27,7 +27,7 @@ async function accept(client: Client, form: FormData): Promise<FormState> {
   if (!id.success) return { error: "Choose a valid appointment." };
   const { data, error } = await client.rpc("accept_appointment", { p_appointment: id.data });
   if (error) return failure(error);
-  dispatchNotificationsAfterCommit();
+  await dispatchNotificationsAfterCommit();
   revalidatePath("/admin/appointments");
   revalidatePath(`/admin/appointments/${id.data}`);
   revalidatePath("/admin/calendar");
@@ -44,7 +44,7 @@ async function decline(client: Client, form: FormData): Promise<FormState> {
     p_appointment: id.data, p_target: "DECLINED", p_reason: reason.data,
   });
   if (error) return failure(error);
-  dispatchNotificationsAfterCommit();
+  await dispatchNotificationsAfterCommit();
   revalidatePath("/admin/appointments");
   revalidatePath(`/admin/appointments/${id.data}`);
   revalidatePath("/staff");
@@ -79,7 +79,7 @@ export async function advanceAsAdmin(_state: FormState, form: FormData): Promise
     p_appointment: id.data, p_target: target.data, p_reason: reason || null,
   });
   if (error) return failure(error);
-  dispatchNotificationsAfterCommit();
+  await dispatchNotificationsAfterCommit();
   revalidatePath("/admin/appointments");
   revalidatePath(`/admin/appointments/${id.data}`);
   revalidatePath("/admin/calendar");

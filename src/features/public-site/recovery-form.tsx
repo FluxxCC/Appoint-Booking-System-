@@ -9,6 +9,6 @@ export function RecoveryForm() {
     <label className="text-sm font-medium">Booking reference<input name="reference" required placeholder="BK-..." maxLength={19} autoCapitalize="characters" className="mt-2 min-h-12 w-full rounded-control border border-line bg-surface px-4 uppercase" /></label>
     {state.error && <p role="alert" className="rounded-xl bg-danger-soft p-3 text-sm text-danger">{state.error}</p>}
     {state.success && <p role="status" className="rounded-xl bg-accent-soft p-3 text-sm text-accent-dark">{state.success}</p>}
-    <button disabled={pending} className="button-primary w-fit disabled:opacity-60">{pending ? "Requesting link…" : "Email me a private link"}</button>
+    <button disabled={pending} className="button-primary w-fit disabled:opacity-60">{pending ? "Requesting link…" : "Send me a new secure link"}</button>
   </form>;
 }

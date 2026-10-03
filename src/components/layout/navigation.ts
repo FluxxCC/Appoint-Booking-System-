@@ -10,6 +10,7 @@ export const navigation: Record<Area, readonly { label: string; href: string; de
     { label: "Administrator access", href: "/admin/access", description: "Owners manage ADMIN invitations and access." },
     { label: "Customers", href: "/admin/customers", description: "Find customer records and appointment history." },
     { label: "Payments", href: "/admin/payments", description: "See payment attempts, collections and refunds." },
+    { label: "Email delivery", href: "/admin/notifications", description: "Review transactional email delivery and retry status." },
     { label: "Reports", href: "/admin/reports", description: "Review appointment and collection totals." },
     { label: "Announcements", href: "/admin/announcements", description: "Create and publish business updates." },
     { label: "Business Settings", href: "/admin/settings", description: "Configure the business and booking rules." },

@@ -2,7 +2,7 @@ import "server-only";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { readVerifiedUser } from "./require-user.server";
-import { accessDecision, landingPath, type Area, type Principal } from "./access";
+import { accessDecision, landingPath, safeAppointmentDestination, type Area, type Principal } from "./access";
 
 const contextSchema = z.object({
   profileActive: z.boolean(), roles: z.array(z.enum(["OWNER", "ADMIN", "STAFF"])), staffActive: z.boolean(),
@@ -39,7 +39,18 @@ export async function requireOwner() {
   return access;
 }
 
-export async function redirectAfterLogin(): Promise<never> {
+export async function redirectAfterLogin(next?: string | null): Promise<never> {
   const { principal } = await getAccess();
-  redirect(principal ? landingPath(principal) : "/login");
+  if (!principal) redirect("/login");
+  const destination = safeAppointmentDestination(next);
+  if (destination?.startsWith("/account/appointments/") && !principal.roles.includes("OWNER") && !principal.roles.includes("ADMIN") && !principal.roles.includes("STAFF")) {
+    redirect(destination);
+  }
+  if (destination?.startsWith("/admin/appointments/") && principal.roles.some(role => role === "OWNER" || role === "ADMIN")) {
+    redirect(principal.aal === "aal2" ? destination : `/auth/mfa?next=${encodeURIComponent(destination)}`);
+  }
+  if (destination?.startsWith("/staff/appointments?") && principal.roles.includes("STAFF") && principal.staffActive) {
+    redirect(destination);
+  }
+  redirect(landingPath(principal));
 }

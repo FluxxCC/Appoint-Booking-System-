@@ -19,6 +19,7 @@ export type AppointmentEmailDetails = {
   paymentDueAt?: string | null;
   declineReason?: string;
   ctaUrl?: string;
+  ctaLabel?: string;
   idempotencyKey: string;
 };
 
@@ -53,7 +54,7 @@ const copy = {
   },
   "booking.guest_access": {
     subject: "Your private booking link",
-    lead: "Use the secure link below to open your guest booking. This link is private and expires shortly.",
+    lead: "Use the secure link below to open your guest booking. This one-time link expires in 60 minutes.",
   },
   "business.new_booking": {
     subject: "A booking request needs your review",
@@ -89,7 +90,7 @@ export function renderAppointmentEmail(input: AppointmentEmailDetails): Transact
   const businessContact = [input.business.contactEmail, input.business.contactPhone].filter(Boolean).join(" · ");
   const contactLine = businessContact ? `<p style="margin:22px 0 0;color:#687783;font-size:14px">Need help? ${escapeHtml(businessContact)}</p>` : "";
   const cta = input.ctaUrl
-    ? `<p style="margin:24px 0"><a href="${escapeHtml(input.ctaUrl)}" style="display:inline-block;padding:12px 18px;background:#006d67;border-radius:8px;color:#fff;text-decoration:none;font-weight:700">${input.kind === "business.new_booking" ? "Review assigned requests" : input.kind === "booking.guest_access" ? "Open private booking" : "View appointment"}</a></p>`
+    ? `<p style="margin:24px 0"><a href="${escapeHtml(input.ctaUrl)}" style="display:inline-block;padding:12px 18px;background:#006d67;border-radius:8px;color:#fff;text-decoration:none;font-weight:700">${escapeHtml(input.ctaLabel ?? (input.kind === "business.new_booking" ? "Review assigned request" : input.kind === "booking.guest_access" ? "View booking" : "View appointment"))}</a></p>`
     : "";
   const textRows = details.map(([label, value]) => `${label}: ${value}`).join("\n");
   const textPayment = input.amountMinor !== undefined && input.currency
@@ -105,14 +106,15 @@ export function renderAppointmentEmail(input: AppointmentEmailDetails): Transact
   };
 }
 
-export function renderGuestAccessEmail(input: { to: string; reference: string; bookingUrl: string; businessName: string }): TransactionalEmail {
+export function renderGuestAccessEmail(input: { to: string; reference: string; bookingUrl: string; businessName: string; idempotencyKey: string }): TransactionalEmail {
   const subject = "Your private booking link";
-  const lead = "Use this secure, one-time link to open your guest booking. The link expires in 15 minutes. Do not forward it.";
+  const lead = "Use this secure, one-time link to open your guest booking. The link expires in 60 minutes. Do not forward it.";
   return {
     kind: "booking.guest_access",
     to: input.to,
     subject,
     text: `${lead}\n\nBooking reference is ${input.reference}\n\nOpen your private booking: ${input.bookingUrl}`,
     html: emailLayout(input.businessName, `<h1 style="font-size:24px;line-height:1.3;margin:0 0 14px">${escapeHtml(subject)}</h1><p style="font-size:16px;line-height:1.6">${escapeHtml(lead)}</p><p style="font-size:14px">Booking reference: <strong>${escapeHtml(input.reference)}</strong></p><p style="margin:24px 0"><a href="${escapeHtml(input.bookingUrl)}" style="display:inline-block;padding:12px 18px;background:#006d67;border-radius:8px;color:#fff;text-decoration:none;font-weight:700">Open private booking</a></p>`),
+    idempotencyKey: input.idempotencyKey,
   };
 }

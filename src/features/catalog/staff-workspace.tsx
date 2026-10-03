@@ -16,18 +16,18 @@ function Schedule({ data, today = false }: { data: StaffWorkspace; today?: boole
   </tr>)}</Table>;
 }
 
-function Appointments({ rows, zone, empty = "No appointments in this view." }: { rows: StaffAppointment[]; zone: string; empty?: string }) {
-  return !rows.length ? <Empty>{empty}</Empty> : <Table headers={["Customer / service", "Start / end", "Status"]}>{rows.map(appointment => <tr key={appointment.id}>
+function Appointments({ rows, zone, empty = "No appointments in this view.", anchors = false, focusId }: { rows: StaffAppointment[]; zone: string; empty?: string; anchors?: boolean; focusId?: string }) {
+  return !rows.length ? <Empty>{empty}</Empty> : <Table headers={["Customer / service", "Start / end", "Status"]}>{rows.map(appointment => <tr key={appointment.id} id={anchors ? `appointment-${appointment.id}` : undefined} className={focusId === appointment.id ? "bg-accent-soft" : undefined}>
     <td><span className="font-semibold">{appointment.customer_name}</span><p className="mt-1 text-xs text-muted">{appointment.service_name}</p></td>
     <td><Time value={appointment.starts_at} zone={zone}/><p className="mt-1 text-xs text-muted">Until <Time value={appointment.ends_at} zone={zone}/></p></td>
     <td><Status value={appointment.state}/></td>
   </tr>)}</Table>;
 }
 
-function RequestQueue({ data }: { data: StaffWorkspace }) {
+function RequestQueue({ data, focusId }: { data: StaffWorkspace; focusId?: string }) {
   return <Card title="Your pending requests">
     <p className="mb-5 max-w-2xl text-sm leading-6 text-muted">A request does not reserve a time. Accepting it checks availability again and reserves the slot when successful.</p>
-    {data.pending.length ? <div className="space-y-3">{data.pending.map(appointment => <article key={appointment.id} className="rounded-2xl border border-line bg-canvas/50 p-4 sm:p-5">
+    {data.pending.length ? <div className="space-y-3">{data.pending.map(appointment => <article key={appointment.id} id={`appointment-${appointment.id}`} className={`rounded-2xl border border-line bg-canvas/50 p-4 sm:p-5 ${focusId === appointment.id ? "ring-2 ring-accent" : ""}`}>
       <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="font-semibold">{appointment.customer_name}</h3><p className="mt-1 text-sm text-muted">{appointment.service_name} · <Time value={appointment.starts_at} zone={data.timezone}/></p></div><Status value={appointment.state}/></div>
       <div className="mt-5 grid gap-5 border-t border-line pt-5 sm:grid-cols-2"><Form action={acceptAsStaff} hidden={{ appointmentId: appointment.id }} fields={[]} submit="Accept request"/><Form action={declineAsStaff} hidden={{ appointmentId: appointment.id }} fields={[{ name: "reason", label: "Reason for declining", type: "textarea", required: true, maxLength: 1000 }]} submit="Decline request"/></div>
     </article>)}</div> : <Empty>No requests assigned to you.</Empty>}
@@ -62,12 +62,12 @@ export async function StaffCalendar() {
   </>;
 }
 
-export async function StaffAppointmentsPage() {
+export async function StaffAppointmentsPage({ focusId }: { focusId?: string } = {}) {
   const data = await readStaffWorkspace();
   return <><PageHeading title="Appointments" description={`Your assigned requests and scheduled visits · ${data.timezone}.`}/><div className="space-y-6">
-    {data.approval_mode === "STAFF_APPROVAL" ? <RequestQueue data={data}/> : <Card title="Pending requests"><p className="mb-4 text-sm text-muted">The business approval policy determines who can review requests.</p><Appointments rows={data.pending} zone={data.timezone} empty="No pending requests assigned to you."/></Card>}
-    <Card title="Upcoming bookings"><Appointments rows={data.upcoming} zone={data.timezone} empty="No upcoming appointments assigned to you."/></Card>
-    <Card title="Today’s full list"><Appointments rows={data.today} zone={data.timezone} empty="No appointments assigned to you today."/></Card>
+    {data.approval_mode === "STAFF_APPROVAL" ? <RequestQueue data={data} focusId={focusId}/> : <Card title="Pending requests"><p className="mb-4 text-sm text-muted">The business approval policy determines who can review requests.</p><Appointments rows={data.pending} zone={data.timezone} empty="No pending requests assigned to you." anchors focusId={focusId}/></Card>}
+    <Card title="Upcoming bookings"><Appointments rows={data.upcoming} zone={data.timezone} empty="No upcoming appointments assigned to you." anchors focusId={focusId}/></Card>
+    <Card title="Today’s full list"><Appointments rows={data.today} zone={data.timezone} empty="No appointments assigned to you today." focusId={focusId}/></Card>
   </div></>;
 }
 

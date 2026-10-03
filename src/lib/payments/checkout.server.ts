@@ -5,6 +5,7 @@ import { z } from "zod";
 import { createPrivilegedClient } from "@/lib/supabase/privileged.server";
 import { readVerifiedUser } from "@/lib/auth/require-user.server";
 import type { PaymentProvider } from "./provider";
+import { dispatchNotificationsAfterCommit } from "@/server/email/post-commit.server";
 
 const preparedAttempt = z.object({
   payment_id: z.uuid(), appointment_id: z.uuid(), amount_minor: z.number().int().positive(),
@@ -62,6 +63,9 @@ export async function startPaymentCheckout(appointmentId: string, provider: Paym
     p_provider: provider.id,
     p_idempotency_key: randomUUID(),
   });
+  // prepare_payment_attempt can expire overdue reservations before it returns.
+  // Flush any resulting lifecycle event only after the RPC transaction commits.
+  await dispatchNotificationsAfterCommit();
   const attempt = preparedAttempt.safeParse(data);
   if (error || !attempt.success) throw new Error("Payment checkout could not be prepared.");
   if (attempt.data.appointment_id !== parsedAppointment.data) throw new Error("Payment checkout could not be prepared.");

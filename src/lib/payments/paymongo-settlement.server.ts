@@ -25,6 +25,6 @@ export async function settlePayMongoPayment(facts: VerifiedProviderPayment) {
     p_paid_at: facts.paidAt,
   });
   if (error || typeof result !== "string") throw new Error("Verified payment could not be recorded.");
-  dispatchNotificationsAfterCommit();
+  await dispatchNotificationsAfterCommit();
   return result;
 }

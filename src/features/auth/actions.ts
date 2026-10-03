@@ -15,7 +15,7 @@ export async function loginAction(_previous: FormState, form: FormData): Promise
   const { error } = await supabase.auth.signInWithPassword(parsed.data);
   if (error) return { error: error.code === "email_not_confirmed" ? "Verify your email before signing in. Check your inbox and spam folder." : "Unable to sign in. Check your credentials or try again later." };
   revalidatePath("/", "layout");
-  return redirectAfterLogin();
+  return redirectAfterLogin(String(form.get("next") ?? ""));
 }
 
 export async function registerAction(_previous: FormState, form: FormData): Promise<FormState> {

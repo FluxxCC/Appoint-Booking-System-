@@ -34,7 +34,7 @@ try {
   const later=(minutes)=>new Date(date.getTime()+minutes*60000).toISOString();
   const request=async(customer,service=ids.service,time=start,staff=ids.staff,key=randomUUID())=>scalar('select public.request_appointment($1,$2,$3,$4,$5)',[customer,staff,service,time,key]);
 
-  equal('all 25 tables have RLS', await scalar("select count(*)::int from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='r' and c.relrowsecurity"),25);
+  equal('all 26 tables have RLS', await scalar("select count(*)::int from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='r' and c.relrowsecurity"),26);
   await actor('anon');
   equal('published services public',await scalar('select count(*)::int from public.services'),2);
   equal('safe staff columns public',await scalar('select count(id)::int from public.staff'),2);
@@ -77,6 +77,7 @@ try {
   const payment=await insertPayment(a);
   equal('verified payment confirms',await scalar('select public.record_verified_payment($1,$2,clock_timestamp())',[payment,'event-1']),'CONFIRMED');
   equal('duplicate success safe',await scalar('select public.record_verified_payment($1,$2,clock_timestamp())',[payment,'event-1']),'CONFIRMED');
+  equal('duplicate PayMongo success creates no duplicate state event',await scalar("select count(*)::int from public.appointment_events where appointment_id=$1 and to_state='CONFIRMED'",[a]),1);
   await db.query("insert into public.refunds(payment_id,amount,idempotency_key,reason) values ($1,300,$2,'test')",[payment,randomUUID()]);
   await denied('refund total capped',"insert into public.refunds(payment_id,amount,idempotency_key,reason) values ($1,300,$2,'test')",[payment,randomUUID()],/remaining balance/);
 
@@ -152,6 +153,20 @@ try {
   equal('claim increments attempt count',claim.rows[0]?.attempts,1);
   equal('service role acknowledges successful delivery',await scalar('select public.finish_notification_outbox($1,true,false,null)',[emailJob]),true);
   equal('successful delivery is marked delivered',await scalar('select state from public.notification_outbox where id=$1',[emailJob]),'DELIVERED');
+  equal('service role records provider acceptance',await scalar('select public.record_notification_delivery($1,$2,$3,$4)',[emailJob,'a'.repeat(64),'customer','resend-message-test']),true);
+  await actor('anon');
+  await denied('anon cannot read provider receipts','select * from public.notification_delivery_receipts');
+  await denied('anon cannot inspect owner outbox','select * from public.owner_notification_outbox(10)');
+  await denied('anon cannot record provider receipts','select public.record_notification_delivery($1,$2,$3,$4)',[emailJob,'b'.repeat(64),'customer','forbidden']);
+  await actor('authenticated',ids.customerUser,'aal2');
+  await denied('customer cannot inspect owner outbox','select * from public.owner_notification_outbox(10)');
+  await denied('customer cannot read provider receipts','select * from public.notification_delivery_receipts');
+  await actor('authenticated',ids.owner,'aal1');
+  await denied('OWNER without MFA cannot inspect email delivery','select * from public.owner_notification_outbox(10)');
+  await actor('authenticated',ids.owner,'aal2');
+  const ownerStatus=await db.query('select id,state,provider_receipts from public.owner_notification_outbox(10) where id=$1',[emailJob]);
+  equal('OWNER with MFA sees safe delivery status',ownerStatus.rows[0]?.state,'DELIVERED');
+  equal('OWNER status includes provider message ID',ownerStatus.rows[0]?.provider_receipts?.[0]?.message_id,'resend-message-test');
   console.log(`PASS: ${checks} database checks (real PostgreSQL via PGlite; Supabase auth shim).`);
 } finally { await db.close(); }
 

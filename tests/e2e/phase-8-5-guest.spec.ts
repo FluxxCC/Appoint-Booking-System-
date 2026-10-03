@@ -31,10 +31,11 @@ async function book(page: Page, email = "guest-e2e@example.test") {
 }
 
 async function emailedLink(request: APIRequestContext) {
-  await expect.poll(async () => (await (await request.get(`${stub}/__e2e/mailbox`)).json()).emails.length).toBeGreaterThan(0);
+  await expect.poll(async () => (await (await request.get(`${stub}/__e2e/mailbox`)).json()).emails.some((email: { text?: string }) => String(email.text).includes("/booking/access#token="))).toBeTruthy();
   const mailbox = await (await request.get(`${stub}/__e2e/mailbox`)).json();
-  expect(String(mailbox.emails.at(-1).text)).toMatch(/Booking reference is BK-[A-F0-9]{16}/i);
-  const link = String(mailbox.emails.at(-1).text).match(/http:\/\/127\.0\.0\.1:3100\/booking\/access#token=[A-Za-z0-9_-]+/)?.[0];
+  const message = mailbox.emails.findLast((email: { text?: string }) => String(email.text).includes("/booking/access#token="));
+  expect(String(message.text)).toMatch(/Booking reference is BK-[A-F0-9]{16}/i);
+  const link = String(message.text).match(/http:\/\/127\.0\.0\.1:3100\/booking\/access#token=[A-Za-z0-9_-]+/)?.[0];
   expect(link).toBeTruthy();
   return link!;
 }
@@ -65,20 +66,64 @@ test("guest booking stays account optional and opens a scoped pending portal", a
   await expect.poll(async () => (await (await request.get(`${stub}/__e2e/stats`)).json()).outboxDispatches).toBe(1);
 });
 
+test("a committed guest booking is immediately emailed through the outbox and acknowledged", async ({ page, browser, request }) => {
+  const { id, reference } = await book(page);
+  await expect(page.getByRole("heading", { name: "Booking request submitted" })).toBeVisible();
+  const mailbox = await (await request.get(`${stub}/__e2e/mailbox`)).json();
+  expect(mailbox.emails).toHaveLength(2);
+  expect(mailbox.emails.some((email: { to?: string[]; text?: string }) => email.to?.includes("guest-e2e@example.test") && String(email.text).includes("/booking/access#token="))).toBe(true);
+  expect(mailbox.emails.some((email: { to?: string[]; text?: string }) => email.to?.includes("owner@example.test") && String(email.text).includes(`/auth/continue?next=%2Fadmin%2Fappointments%2F${id}`))).toBe(true);
+  const ownerMail = mailbox.emails.find((email: { to?: string[] }) => email.to?.includes("owner@example.test"));
+  const ownerLink = String(ownerMail.text).match(/http:\/\/127\.0\.0\.1:3100\/auth\/continue\?next=%2Fadmin%2Fappointments%2F[0-9a-f-]+/)?.[0];
+  expect(ownerLink).toBeTruthy();
+  const owner = await browser.newPage();
+  await owner.goto(ownerLink!);
+  await expect(owner).toHaveURL(/\/login\?next=/);
+  await owner.getByLabel("Email address").fill("owner@example.test");
+  await owner.locator('input[name="password"]').fill("e2e-owner-passphrase");
+  await owner.getByRole("button", { name: "Sign in" }).click();
+  await expect(owner).toHaveURL(new RegExp(`/admin/appointments/${id}`));
+  await expect(owner.getByRole("heading", { name: "Appointment details" })).toBeVisible();
+  await owner.close();
+  const stats = await (await request.get(`${stub}/__e2e/stats`)).json();
+  expect(stats.outbox).toEqual([{ state: "DELIVERED", attempts: 1, last_error: null }]);
+  expect(stats.receipts).toBe(2);
+  expect(reference).toMatch(/^BK-[A-F0-9]{16}$/);
+});
+
+test("staff operational email requires sign-in and returns to its assigned request", async ({ page, browser, request }) => {
+  await request.put(`${stub}/__e2e/state`, { data: { approvalMode: "STAFF_APPROVAL" } });
+  const { id } = await book(page);
+  const mailbox = await (await request.get(`${stub}/__e2e/mailbox`)).json();
+  const message = mailbox.emails.find((email: { to?: string[]; text?: string }) => email.to?.includes("staff@example.test"));
+  expect(message).toBeTruthy();
+  const destination = `/staff/appointments?focus=${id}#appointment-${id}`;
+  expect(String(message.text)).toContain(`/auth/continue?next=${encodeURIComponent(destination)}`);
+  const fresh = await browser.newPage();
+  await fresh.goto(`http://127.0.0.1:3100/auth/continue?next=${encodeURIComponent(destination)}`);
+  await expect(fresh).toHaveURL(/\/login\?next=/);
+  await fresh.getByLabel("Email address").fill("staff@example.test");
+  await fresh.locator('input[name="password"]').fill("e2e-staff-passphrase");
+  await fresh.getByRole("button", { name: "Sign in" }).click();
+  await expect(fresh).toHaveURL(new RegExp(`/staff/appointments\\?focus=${id}#appointment-${id}`));
+  await expect(fresh.locator(`#appointment-${id}`)).toBeVisible();
+  await fresh.close();
+});
+
 test("recovery response is generic, email exchange restores access, and replay fails", async ({ page, browser, request }) => {
   const { id, reference } = await book(page);
   const fresh = await browser.newPage();
   await fresh.goto("/booking/manage");
   await fresh.getByLabel("Booking email").fill("wrong@example.test");
   await fresh.getByLabel("Booking reference").fill(reference);
-  await fresh.getByRole("button", { name: "Email me a private link" }).click();
+  await fresh.getByRole("button", { name: "Send me a new secure link" }).click();
   const generic = fresh.getByRole("status");
   await expect(generic).toContainText(/If those details match/i);
   const before = (await (await request.get(`${stub}/__e2e/mailbox`)).json()).emails.length;
   await fresh.getByLabel("Booking email").fill("guest-e2e@example.test");
   await fresh.getByLabel("Booking reference").fill(reference);
-  await expect(fresh.getByRole("button", { name: "Email me a private link" })).toBeEnabled();
-  await fresh.getByRole("button", { name: "Email me a private link" }).click();
+  await expect(fresh.getByRole("button", { name: "Send me a new secure link" })).toBeEnabled();
+  await fresh.getByRole("button", { name: "Send me a new secure link" }).click();
   await expect(generic).toContainText(/If those details match/i);
   await expect.poll(async () => (await (await request.get(`${stub}/__e2e/mailbox`)).json()).emails.length, { timeout: 15_000 }).toBe(before + 1);
   const link = await emailedLink(request);
@@ -87,7 +132,7 @@ test("recovery response is generic, email exchange restores access, and replay f
   await expect(fresh.getByText(reference)).toBeVisible();
   const replay = await browser.newPage();
   await replay.goto(link);
-  await expect(replay.getByText(/invalid or expired/i)).toBeVisible();
+  await expect(replay.getByText(/invalid.*expired|already used/i)).toBeVisible();
   await replay.close();
   await fresh.close();
 });
@@ -102,7 +147,7 @@ test("guest payment state is available without an account", async ({ page, reque
   await expect(page.getByRole("button", { name: /Pay online/i })).toBeEnabled();
 });
 
-test("a signed-in customer can use guest token access without claiming ownership", async ({ page, request }) => {
+test("a signed-in customer can use guest token access without claiming ownership", async ({ page }) => {
   const { id, reference } = await book(page);
   await page.goto("/login");
   await page.getByLabel("Email address").fill("customer@example.test");
@@ -115,8 +160,31 @@ test("a signed-in customer can use guest token access without claiming ownership
   await expect(page).toHaveURL(new RegExp(`/booking/manage\\?id=${id}`));
   await page.goto(`/account/appointments/${id}`);
   await expect(page.getByText("This page could not be found.")).toBeVisible();
+});
+
+test("registered customer appointment email returns through login to the owned appointment", async ({ page, browser, request }) => {
+  await page.goto("/login");
+  await page.getByLabel("Email address").fill("customer@example.test");
+  await page.locator('input[name="password"]').fill("e2e-customer-passphrase");
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page).toHaveURL(/\/account/);
+  const { id, reference } = await book(page);
+  await expect(page.getByText(reference)).toBeVisible();
   const mailbox = await (await request.get(`${stub}/__e2e/mailbox`)).json();
-  expect(mailbox.emails).toHaveLength(0); // Appointment mail is delivered by the post-commit outbox worker.
+  const customerEmail = mailbox.emails.find((email: { to?: string[]; text?: string }) => email.to?.includes("customer@example.test") && String(email.text).includes("%2Faccount%2Fappointments%2F"));
+  expect(customerEmail).toBeTruthy();
+  await page.getByRole("button", { name: "Sign out" }).click();
+  const fresh = await browser.newPage();
+  const customerLink = String(customerEmail.text).match(/http:\/\/127\.0\.0\.1:3100\/auth\/continue\?next=%2Faccount%2Fappointments%2F[0-9a-f-]+/)?.[0];
+  expect(customerLink).toBeTruthy();
+  await fresh.goto(customerLink!);
+  await expect(fresh).toHaveURL(/\/login\?next=/);
+  await fresh.getByLabel("Email address").fill("customer@example.test");
+  await fresh.locator('input[name="password"]').fill("e2e-customer-passphrase");
+  await fresh.getByRole("button", { name: "Sign in" }).click();
+  await expect(fresh).toHaveURL(new RegExp(`/account/appointments/${id}`));
+  await expect(fresh.getByText(reference)).toBeVisible();
+  await fresh.close();
 });
 
 test("signed-in booking explains identity, locks verified email, and sign-out returns to guest", async ({ page }) => {

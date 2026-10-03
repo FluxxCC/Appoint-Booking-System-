@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { createDatabase } from './database-harness.mjs';
 
 const db = await createDatabase();
@@ -190,6 +190,22 @@ try {
     return request(guestCustomer,ids.staffTwoRow,ids.deposit,start(10,10));
   })();
   equal('guest checkout fixture awaits payment',await state(guestAppointment),'AWAITING_PAYMENT');
+  const guestReference=await scalar('select public_reference from public.appointments where id=$1',[guestAppointment]);
+  const firstExchange=await json('select public.issue_guest_access_link($1,$2,$3)',["guest@example.test",guestReference,guestAppointment]);
+  equal('guest email exchange link belongs to requested appointment',firstExchange.appointment_id,guestAppointment);
+  equal('guest email link lifetime is 60 minutes',await scalar("select extract(epoch from expires_at-created_at)::int from public.guest_access_tokens where appointment_id=$1 and scope='MANAGE' order by created_at desc limit 1",[guestAppointment]),3600);
+  const exchangeHash=createHash('sha256').update(firstExchange.token).digest('hex');
+  equal('guest one-time token is stored as its hash',await scalar('select count(*)::int from public.guest_access_tokens where appointment_id=$1 and scope=\'MANAGE\' and token_hash=$2',[guestAppointment,exchangeHash]),1);
+  const exchanged=await json('select public.exchange_guest_access_link($1)',[exchangeHash]);
+  equal('guest exchange creates scoped appointment access',exchanged.appointment_id,guestAppointment);
+  equal('guest email exchange cannot be replayed',await scalar('select public.exchange_guest_access_link($1)',[exchangeHash]),null);
+  const expiring=await json('select public.issue_guest_access_link($1,$2,$3)',["guest@example.test",guestReference,guestAppointment]);
+  const expiringHash=createHash('sha256').update(expiring.token).digest('hex');
+  await db.query("update public.guest_access_tokens set expires_at=clock_timestamp()-interval '1 second' where token_hash=$1",[expiringHash]);
+  equal('expired email exchange link is unusable',await scalar('select public.exchange_guest_access_link($1)',[expiringHash]),null);
+  await actor('authenticated',ids.customerTwo);
+  await denied('authenticated user cannot issue guest email link','select public.issue_guest_access_link($1,$2,$3)',["guest@example.test",guestReference,guestAppointment],/permission denied/);
+  await actor('service_role');
   const guestTokenHash='a'.repeat(64);
   await db.query("insert into public.guest_access_tokens(appointment_id,token_hash,scope,expires_at) values($1,$2,'VIEW',clock_timestamp()+interval '1 hour')",[guestAppointment,guestTokenHash]);
   const guestAttempt=await json('select public.prepare_payment_attempt($1,null,$2,$3,$4)',[guestAppointment,guestTokenHash,'test-provider',randomUUID()]);

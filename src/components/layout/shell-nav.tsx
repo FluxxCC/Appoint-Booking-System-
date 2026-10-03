@@ -7,7 +7,10 @@ import { NavIcon } from "@/components/ui/nav-icon";
 
 export function ShellNav({ area, principal }: { area: Area; principal: Principal }) {
   const pathname = usePathname();
-  const items = navigation[area].filter(item => item.href !== "/admin/access" || principal.roles.includes("OWNER"));
+  const items = navigation[area].filter(item =>
+    (item.href !== "/admin/access" || principal.roles.includes("OWNER")) &&
+    (item.href !== "/admin/notifications" || principal.roles.includes("OWNER"))
+  );
   const primary = area === "admin" ? ["/admin", "/admin/appointments", "/admin/calendar", "/admin/services"] : area === "staff" ? ["/staff", "/staff/calendar", "/staff/appointments", "/staff/availability"] : ["/account", "/account/appointments", "/account/payments", "/account/profile"];
   const iconFor = (href: string) => href.endsWith("/services") ? "services" as const : href.endsWith("/profile") ? "profile" as const : href.endsWith("/calendar") || href.endsWith("/availability") ? "calendar" as const : href.endsWith("/appointments") || href.endsWith("/payments") ? "appointments" as const : "home" as const;
   const activeFor = (href: string) => pathname === href || (href !== `/${area}` && pathname.startsWith(`${href}/`));

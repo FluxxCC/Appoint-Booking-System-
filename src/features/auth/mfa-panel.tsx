@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/browser";
 
-export function MfaPanel() {
+export function MfaPanel({ nextPath = "/admin" }: { nextPath?: string }) {
   const router = useRouter();
   const [factorId, setFactorId] = useState<string>();
   const [qr, setQr] = useState<string>();
@@ -63,7 +63,7 @@ export function MfaPanel() {
       const { error } = await createClient().auth.mfa.challengeAndVerify({ factorId, code });
       if (error) throw error;
       // New request checks verified JWT assurance and current DB roles again.
-      router.replace("/admin");
+      router.replace(nextPath);
       router.refresh();
     } catch { setError("The code could not be verified. Check the current code and try again."); setPending(false); }
   }

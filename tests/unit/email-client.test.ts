@@ -56,4 +56,11 @@ describe("server transactional email sender", () => {
     const networkSend = createResendSender({ apiKey: "test-key", from: "no-reply@example.test", fetcher: vi.fn<typeof fetch>().mockRejectedValue(new Error("secret network detail")) });
     await expect(networkSend(valid)).resolves.toEqual({ ok: false, code: "network_error", retryable: true });
   });
+
+  it("treats provider rate limits and server failures as retryable", async () => {
+    for (const status of [429, 500, 503]) {
+      const send = createResendSender({ apiKey: "test-key", from: "no-reply@example.test", fetcher: vi.fn<typeof fetch>().mockResolvedValue(new Response("provider detail", { status })) });
+      await expect(send(valid)).resolves.toEqual({ ok: false, code: "provider_error", retryable: true });
+    }
+  });
 });

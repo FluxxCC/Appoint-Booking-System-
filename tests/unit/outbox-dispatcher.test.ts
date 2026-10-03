@@ -25,7 +25,7 @@ const job = {
   updated_at: "2026-10-03T00:00:00Z",
 };
 
-function setup(input: { jobs?: typeof job[]; bookingState?: string; verifiedPayments?: { id: string; amount: number }[] } = {}) {
+function setup(input: { jobs?: typeof job[]; bookingState?: string; verifiedPayments?: { id: string; amount: number; currency?: string; state?: string; exception_reason?: string | null }[] } = {}) {
   const jobs = input.jobs ?? [job];
   const acknowledgments: Record<string, unknown>[] = [];
   const tableData: Record<string, unknown> = {
@@ -60,6 +60,7 @@ function setup(input: { jobs?: typeof job[]; bookingState?: string; verifiedPaym
     rpc: vi.fn(async (name: string, args: Record<string, unknown>) => {
       if (name === "claim_notification_outbox") return { data: jobs, error: null };
       if (name === "issue_guest_access_link") return { data: { appointment_id: appointmentId, token: "a".repeat(43) }, error: null };
+      if (name === "record_notification_delivery") return { data: true, error: null };
       if (name === "finish_notification_outbox") { acknowledgments.push(args); return { data: true, error: null }; }
       return { data: null, error: { message: "unexpected rpc" } };
     }),
@@ -83,6 +84,7 @@ describe("canonical transactional outbox dispatcher", () => {
     expect(sendEmail).toHaveBeenCalledOnce();
     expect(sendEmail.mock.calls[0][0]).toMatchObject({ kind: "booking.request_received", to: "guest@example.test" });
     expect(client.rpc).toHaveBeenCalledWith("claim_notification_outbox", { p_limit: 5 });
+    expect(client.rpc).toHaveBeenCalledWith("record_notification_delivery", expect.objectContaining({ p_outbox_id: job.id, p_provider_message_id: "resend-test-id" }));
     expect(acknowledgments).toEqual([expect.objectContaining({ p_id: job.id, p_success: true })]);
     jobs.length = 0;
     await dispatchNotificationOutbox(5);
@@ -123,5 +125,35 @@ describe("canonical transactional outbox dispatcher", () => {
     await dispatchNotificationOutbox(5);
 
     expect(sendEmail.mock.calls[0][0]).toMatchObject({ kind: "booking.confirmed" });
+  });
+
+  it("delivers late payment exceptions to the configured business contact", async () => {
+    setup({
+      jobs: [{ ...job, kind: "PAYMENT_EXCEPTION", deduplication_key: "payment-exception:payment-1" }],
+      verifiedPayments: [{ id: "payment-1", amount: 500, currency: "PHP", state: "SUCCEEDED", exception_reason: "LATE_PAYMENT_REVIEW" }],
+    });
+    sendEmail.mockResolvedValue({ ok: true, id: "resend-test-id" });
+
+    await expect(dispatchNotificationOutbox(5)).resolves.toMatchObject({ delivered: 1 });
+
+    expect(sendEmail).toHaveBeenCalledOnce();
+    expect(sendEmail.mock.calls[0][0]).toMatchObject({ kind: "business.payment_exception", to: "business@example.test" });
+  });
+
+  it("treats Resend 429 responses as retryable and keeps the outbox job", async () => {
+    const { acknowledgments } = setup();
+    sendEmail.mockResolvedValue({ ok: false, code: "provider_error", retryable: true });
+    await expect(dispatchNotificationOutbox(5)).resolves.toMatchObject({ retrying: 1, failed: 0 });
+    expect(acknowledgments[0]).toMatchObject({ p_success: false, p_retryable: true, p_error_code: "provider_error" });
+  });
+
+  it("uses the same provider idempotency key across a retry", async () => {
+    const { client } = setup();
+    sendEmail.mockResolvedValue({ ok: true, id: "resend-test-id" });
+    await dispatchNotificationOutbox(5);
+    const firstKey = sendEmail.mock.calls[0][0].idempotencyKey;
+    await dispatchNotificationOutbox(5);
+    expect(sendEmail.mock.calls[1][0].idempotencyKey).toBe(firstKey);
+    expect(client.rpc).toHaveBeenCalledTimes(8); // claim, link issue, receipt, finish for each pass
   });
 });

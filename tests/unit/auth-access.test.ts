@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { accessDecision, landingPath, safeAuthDestination, type Principal } from "../../src/lib/auth/access";
+import { accessDecision, landingPath, safeAppointmentDestination, safeAuthDestination, type Principal } from "../../src/lib/auth/access";
 import { registrationSchema, resetSchema } from "../../src/features/auth/schemas";
 
 const customer: Principal = { userId: "customer", email: "test@example.com", profileActive: true, staffActive: false, roles: [], aal: "aal1" };
@@ -37,6 +37,15 @@ describe("workspace authorization", () => {
   it("rejects external and encoded redirect destinations", () => {
     for (const path of ["https://evil.test", "//evil.test", "/\\evil.test", "%2f%2fevil.test", "/admin?next=evil", undefined]) expect(safeAuthDestination(path)).toBe("/account");
     expect(safeAuthDestination("/reset-password")).toBe("/reset-password");
+  });
+  it("preserves only same-origin appointment destinations supported by email links", () => {
+    const id = "11111111-1111-4111-8111-111111111111";
+    expect(safeAppointmentDestination(`/account/appointments/${id}`)).toBe(`/account/appointments/${id}`);
+    expect(safeAppointmentDestination(`/admin/appointments/${id}`)).toBe(`/admin/appointments/${id}`);
+    expect(safeAppointmentDestination(`/staff/appointments?focus=${id}#appointment-${id}`)).toBe(`/staff/appointments?focus=${id}#appointment-${id}`);
+    for (const path of ["https://evil.test", "//evil.test", `/account/appointments/${id}?other=1`, `/staff/appointments?focus=${id}#appointment-22222222-2222-4222-8222-222222222222`]) {
+      expect(safeAppointmentDestination(path)).toBeNull();
+    }
   });
 });
 

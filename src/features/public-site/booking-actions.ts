@@ -44,7 +44,7 @@ export async function submitBookingAction(_previous:BookingFormState,form:FormDa
  }
  const booking=data as {appointment_id?:unknown;guest_token?:unknown};
  if(typeof booking.appointment_id!=="string")return {error:"We could not confirm the request. Please try again."};
- dispatchNotificationsAfterCommit();
+ await dispatchNotificationsAfterCommit();
  if(!user){
   if(typeof booking.guest_token!=="string"||!/^[A-Za-z0-9_-]{40,60}$/.test(booking.guest_token))return {error:"This request was already received. A retry does not create new guest access; reopen the original confirmation page in the browser where you submitted it."};
   const store=await cookies();
