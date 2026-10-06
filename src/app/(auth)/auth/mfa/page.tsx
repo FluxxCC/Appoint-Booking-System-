@@ -12,8 +12,8 @@ export default async function MfaPage({ searchParams }: { searchParams: Promise<
   const safeNext = safeAppointmentDestination(next);
   const destination = safeNext?.startsWith("/admin/appointments/") ? safeNext : "/admin";
   const { principal } = await getAccess();
-  if (!principal) redirect("/login");
+  if (!principal) redirect("/admin/login");
   if (!principal.profileActive || !principal.roles.some(role => role === "OWNER" || role === "ADMIN")) redirect("/auth/access-denied");
   if (principal.aal === "aal2") redirect(destination);
-  return <AuthCard title="Protect your business account" description="Owner and administrator access requires an authenticator code each time you sign in."><MfaPanel nextPath={destination} /><form action={logoutAction} className="mt-6"><button className="text-sm text-muted">Sign out</button></form></AuthCard>;
+  return <AuthCard title="Protect your business account" description="Owner and administrator access requires authenticator verification. If you have not enrolled yet, you will be guided through setup; future sign-ins use a code from your authenticator app."><MfaPanel nextPath={destination} /><form action={logoutAction} className="mt-6"><button className="text-sm text-muted">Sign out</button></form></AuthCard>;
 }

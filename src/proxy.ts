@@ -31,4 +31,4 @@ export async function proxy(request: NextRequest) {
 }
 
 // Proxy refreshes sessions; it is not the authorization boundary.
-export const config = { matcher: ["/account/:path*", "/staff/:path*", "/admin/:path*", "/auth/:path*", "/login", "/register", "/forgot-password", "/reset-password"] };
+export const config = { matcher: ["/account/:path*", "/staff/:path*", "/admin/:path*", "/owner/login", "/auth/:path*", "/login", "/register", "/forgot-password", "/reset-password"] };

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { BackButton } from "@/components/ui/back-button";
 import { readGuestBooking } from "@/features/public-site/booking-data.server";
 import { readPublicWebsite } from "@/features/public-site/data.server";
 import { RecoveryForm } from "@/features/public-site/recovery-form";
@@ -39,6 +40,6 @@ export default async function ManageGuestBooking({ searchParams }: { searchParam
     <p className="mt-5 text-sm leading-6 text-muted">{bookingGuidance(state)}</p>
     {state === "AWAITING_PAYMENT" && <PaymentPreparation appointmentId={String(appointment.id)} amount={required} currency={currency} deadline={appointment.payment_due_at ? String(appointment.payment_due_at) : null} timezone={zone} contactEmail={site.business?.contact_email} />}
     {state === "PENDING" && <p className="mt-5 rounded-xl bg-accent-soft p-4 text-sm leading-6">Keep this private browser access. If you change devices or lose this page, request a fresh email link using your booking reference.</p>}
-    <div className="mt-7 flex flex-wrap gap-4">{state === "PAYMENT_EXPIRED" && <Link href="/book" className="text-sm font-semibold text-accent-dark underline">Make a new booking</Link>}<Link href="/booking/manage" className="text-sm font-semibold text-accent-dark underline">Request another private link</Link><Link href="/" className="text-sm font-semibold text-accent-dark underline">Back to website</Link></div>
+    <div className="mt-7 flex flex-wrap gap-4">{state === "PAYMENT_EXPIRED" && <Link href="/book" className="text-sm font-semibold text-accent-dark underline">Make a new booking</Link>}<Link href="/booking/manage" className="text-sm font-semibold text-accent-dark underline">Request another private link</Link><BackButton href="/">Back to website</BackButton></div>
   </div></main>;
 }

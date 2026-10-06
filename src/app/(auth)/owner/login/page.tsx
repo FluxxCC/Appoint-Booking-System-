@@ -1,0 +1,9 @@
+import type { Metadata } from "next";
+import { WorkspaceLogin } from "@/features/auth/workspace-login";
+
+export const metadata: Metadata = { title: "Owner sign in", robots: { index: false, follow: false } };
+
+export default async function OwnerLoginPage({ searchParams }: { searchParams: Promise<{ next?: string }> }) {
+  const { next } = await searchParams;
+  return <WorkspaceLogin role="OWNER" next={next} />;
+}

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
+import { BackButton } from "@/components/ui/back-button";
 import type { Metadata } from "next";
 import { readVerifiedUser } from "@/lib/auth/require-user.server";
 import { readGuestBooking } from "@/features/public-site/booking-data.server";
@@ -74,6 +75,6 @@ export default async function BookingConfirmation({ searchParams }: { searchPara
       <div className="mt-5 border-t border-line pt-4"><p className="font-semibold">{money(Number(a.total_amount ?? 0), currency)}</p><p className="mt-1 text-sm text-muted">{mode === "PAY_AT_BUSINESS" ? "Pay at the business" : a.state === "AWAITING_PAYMENT" ? `${money(required, currency)} required` : "Payment required only after acceptance"}</p></div>
       {a.state === "AWAITING_PAYMENT" && a.payment_due_at && <p className="mt-2 text-sm text-muted">Payment deadline: {formatBusinessTime(a.payment_due_at, timeZone)}</p>}
     </div>
-    <div className="mt-7 flex flex-wrap gap-3"><Link href={accessMethod === "account"?`/account/appointments/${a.id}`:`/booking/manage?id=${encodeURIComponent(a.id)}`} className="button-primary">View booking</Link><Link href="/" className="button-secondary">Back to home</Link></div>
+    <div className="mt-7 flex flex-wrap gap-3"><Link href={accessMethod === "account"?`/account/appointments/${a.id}`:`/booking/manage?id=${encodeURIComponent(a.id)}`} className="button-primary">View booking</Link><BackButton href="/">Back to home</BackButton></div>
   </div></main>;
 }

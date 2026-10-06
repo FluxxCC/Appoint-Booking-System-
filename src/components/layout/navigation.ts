@@ -15,7 +15,7 @@ export const navigation: Record<Area, readonly { label: string; href: string; de
     { label: "Announcements", href: "/admin/announcements", description: "Create and publish business updates." },
     { label: "Business Settings", href: "/admin/settings", description: "Configure the business and booking rules." },
     { label: "Closures", href: "/admin/closures", description: "Manage full-day and partial business closures." },
-    { label: "Appearance", href: "/admin/appearance", description: "Branding and website appearance controls are planned for a later phase." },
+    { label: "Appearance", href: "/admin/appearance", description: "Customize your public website’s brand, images and story." },
   ],
   staff: [
     { label: "Today", href: "/staff", description: "Your next visit and today’s assigned work." },

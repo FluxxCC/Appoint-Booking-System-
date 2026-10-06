@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { BackButton } from "@/components/ui/back-button";
 import { readPublicWebsite } from "@/features/public-site/data.server";
 
 export const metadata: Metadata = { title: "Refund policy" };
@@ -20,6 +21,6 @@ export default async function RefundPolicyPage() {
       {site.business?.contact_phone && <p className="mt-2 text-sm">Call <a className="font-semibold text-accent-dark underline" href={`tel:${site.business.contact_phone}`}>{site.business.contact_phone}</a></p>}
       {!site.business?.contact_email && !site.business?.contact_phone && <Link href="/contact" className="mt-3 inline-block text-sm font-semibold text-accent-dark underline">Contact the business</Link>}
     </div>
-    <div className="mt-7 flex flex-wrap gap-4"><Link href="/booking/manage" className="button-secondary">Manage booking</Link><Link href="/" className="self-center text-sm font-semibold text-accent-dark underline">Back to website</Link></div>
+    <div className="mt-7 flex flex-wrap gap-4"><Link href="/booking/manage" className="button-secondary">Manage booking</Link><BackButton href="/">Back to website</BackButton></div>
   </article></main>;
 }

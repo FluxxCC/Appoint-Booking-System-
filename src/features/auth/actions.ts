@@ -3,7 +3,8 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { requireArea, redirectAfterLogin } from "@/lib/auth/access.server";
+import { getAccess, requireArea, redirectAfterLogin } from "@/lib/auth/access.server";
+import type { AppRole } from "@/lib/auth/access";
 import { siteUrl } from "@/lib/auth/site-url.server";
 import { emailSchema, loginSchema, registrationSchema, resetSchema, customerProfileSchema, validationState, type FormState } from "./schemas";
 import { provisionVerifiedCustomer } from "./provision-customer.server";
@@ -14,8 +15,52 @@ export async function loginAction(_previous: FormState, form: FormData): Promise
   const supabase = await createClient();
   const { error } = await supabase.auth.signInWithPassword(parsed.data);
   if (error) return { error: error.code === "email_not_confirmed" ? "Verify your email before signing in. Check your inbox and spam folder." : "Unable to sign in. Check your credentials or try again later." };
+  const access = await getAccess().catch(() => ({ principal: null }));
+  if (!access.principal || access.principal.roles.length > 0) {
+    await supabase.auth.signOut({ scope: "local" });
+    revalidatePath("/", "layout");
+    return { error: access.principal?.roles.length
+      ? "This is customer sign-in. Use the Owner, Admin, or Staff sign-in page for your work account."
+      : "Your account access could not be verified. Please try again." };
+  }
   revalidatePath("/", "layout");
   return redirectAfterLogin(String(form.get("next") ?? ""));
+}
+
+async function workspaceLoginAction(role: AppRole, _previous: FormState, form: FormData): Promise<FormState> {
+  const parsed = loginSchema.safeParse({ email: form.get("email"), password: form.get("password") });
+  if (!parsed.success) return validationState(parsed.error);
+  const supabase = await createClient();
+  const { error } = await supabase.auth.signInWithPassword(parsed.data);
+  if (error) return { error: error.code === "email_not_confirmed" ? "Verify your email before signing in. Check your inbox and spam folder." : "Unable to sign in. Check your credentials or try again later." };
+
+  const access = await getAccess().catch(() => ({ principal: null }));
+  const principal = access.principal;
+  // Owners are also administrators for appointment operations, so links to
+  // admin appointment routes must remain usable from the owner portal.
+  const hasRole = principal?.profileActive && (role === "ADMIN"
+    ? principal.roles.some(assigned => assigned === "OWNER" || assigned === "ADMIN")
+    : principal.roles.includes(role)) && (role !== "STAFF" || principal.staffActive);
+  if (!hasRole) {
+    await supabase.auth.signOut({ scope: "local" });
+    revalidatePath("/", "layout");
+    return { error: "This account is not assigned to this workspace. Check that you chose the correct sign-in or contact the business owner." };
+  }
+
+  revalidatePath("/", "layout");
+  return redirectAfterLogin(String(form.get("next") ?? ""));
+}
+
+export async function ownerLoginAction(previous: FormState, form: FormData): Promise<FormState> {
+  return workspaceLoginAction("OWNER", previous, form);
+}
+
+export async function adminLoginAction(previous: FormState, form: FormData): Promise<FormState> {
+  return workspaceLoginAction("ADMIN", previous, form);
+}
+
+export async function staffLoginAction(previous: FormState, form: FormData): Promise<FormState> {
+  return workspaceLoginAction("STAFF", previous, form);
 }
 
 export async function registerAction(_previous: FormState, form: FormData): Promise<FormState> {

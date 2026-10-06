@@ -27,7 +27,7 @@ export async function getAccess() {
 export async function requireArea(area: Area) {
   const access = await getAccess();
   const decision = accessDecision(access.principal, area);
-  if (decision === "login") redirect("/login");
+  if (decision === "login") redirect(area === "admin" ? "/admin/login" : area === "staff" ? "/staff/login" : "/login");
   if (decision === "denied") redirect("/auth/access-denied");
   if (decision === "mfa") redirect("/auth/mfa");
   return { supabase: access.supabase, principal: access.principal! };
