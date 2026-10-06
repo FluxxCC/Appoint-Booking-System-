@@ -67,6 +67,12 @@ export type Database = { public: { Tables: {
     };
     Relationships: [];
   };
+  appointment_home_locations: {
+    Row: { appointment_id: string; address: string; latitude: number; longitude: number; landmark: string | null; instructions: string | null; area_hint: string; created_at: string };
+    Insert: { appointment_id: string; address: string; latitude: number; longitude: number; landmark?: string | null; instructions?: string | null; area_hint: string; created_at?: string };
+    Update: { appointment_id?: string; address?: string; latitude?: number; longitude?: number; landmark?: string | null; instructions?: string | null; area_hint?: string; created_at?: string };
+    Relationships: [];
+  };
   appointment_items: {
     Row: {
       id: string;
@@ -166,6 +172,11 @@ export type Database = { public: { Tables: {
       updated_at: string;
       acceptance_source: string;
       public_reference: string;
+      fulfillment_mode: Database["public"]["Enums"]["appointment_fulfillment_mode"];
+      home_service_fee_snapshot: number;
+      home_travel_before_snapshot: number;
+      home_travel_after_snapshot: number;
+      service_area_hint: string | null;
     };
     Insert: {
       id?: string;
@@ -196,6 +207,11 @@ export type Database = { public: { Tables: {
       updated_at?: string;
       acceptance_source?: string;
       public_reference?: string;
+      fulfillment_mode?: Database["public"]["Enums"]["appointment_fulfillment_mode"];
+      home_service_fee_snapshot?: number;
+      home_travel_before_snapshot?: number;
+      home_travel_after_snapshot?: number;
+      service_area_hint?: string | null;
     };
     Update: {
       id?: string;
@@ -226,6 +242,11 @@ export type Database = { public: { Tables: {
       updated_at?: string;
       acceptance_source?: string;
       public_reference?: string;
+      fulfillment_mode?: Database["public"]["Enums"]["appointment_fulfillment_mode"];
+      home_service_fee_snapshot?: number;
+      home_travel_before_snapshot?: number;
+      home_travel_after_snapshot?: number;
+      service_area_hint?: string | null;
     };
     Relationships: [];
   };
@@ -379,6 +400,9 @@ export type Database = { public: { Tables: {
       customer_registration_enabled: boolean;
       booking_approval_mode: string;
       refund_policy: string;
+      service_origin_latitude: number | null;
+      service_origin_longitude: number | null;
+      home_service_max_radius_km: number | null;
     };
     Insert: {
       id?: string;
@@ -400,6 +424,9 @@ export type Database = { public: { Tables: {
       customer_registration_enabled?: boolean;
       booking_approval_mode?: string;
       refund_policy?: string;
+      service_origin_latitude?: number | null;
+      service_origin_longitude?: number | null;
+      home_service_max_radius_km?: number | null;
     };
     Update: {
       id?: string;
@@ -421,6 +448,9 @@ export type Database = { public: { Tables: {
       customer_registration_enabled?: boolean;
       booking_approval_mode?: string;
       refund_policy?: string;
+      service_origin_latitude?: number | null;
+      service_origin_longitude?: number | null;
+      home_service_max_radius_km?: number | null;
     };
     Relationships: [];
   };
@@ -756,6 +786,11 @@ export type Database = { public: { Tables: {
       image_path: string | null;
       deposit_type: string;
       deposit_percent_bps: number | null;
+      supports_business_location: boolean;
+      supports_home_service: boolean;
+      home_service_fee: number;
+      home_travel_before_minutes: number;
+      home_travel_after_minutes: number;
     };
     Insert: {
       id?: string;
@@ -776,6 +811,11 @@ export type Database = { public: { Tables: {
       image_path?: string | null;
       deposit_type?: string;
       deposit_percent_bps?: number | null;
+      supports_business_location?: boolean;
+      supports_home_service?: boolean;
+      home_service_fee?: number;
+      home_travel_before_minutes?: number;
+      home_travel_after_minutes?: number;
     };
     Update: {
       id?: string;
@@ -796,6 +836,11 @@ export type Database = { public: { Tables: {
       image_path?: string | null;
       deposit_type?: string;
       deposit_percent_bps?: number | null;
+      supports_business_location?: boolean;
+      supports_home_service?: boolean;
+      home_service_fee?: number;
+      home_travel_before_minutes?: number;
+      home_travel_after_minutes?: number;
     };
     Relationships: [];
   };
@@ -1026,6 +1071,11 @@ my_staff_workspace: { Args: {  }; Returns: Json };
 public_catalog: { Args: {  }; Returns: Json };
 public_booking_submit: { Args: { p_service: string | null; p_staff: string | null; p_start: string | null; p_request_key: string | null; p_name: string | null; p_email: string | null; p_phone: string | null }; Returns: Json };
 server_public_booking_submit: { Args: { p_service: string | null; p_staff: string | null; p_start: string | null; p_request_key: string | null; p_name: string | null; p_email: string | null; p_phone: string | null; p_auth_user: string | null }; Returns: Json };
+server_home_service_booking_submit: { Args: { p_service: string | null; p_staff: string | null; p_start: string | null; p_request_key: string | null; p_name: string | null; p_email: string | null; p_phone: string | null; p_auth_user: string | null; p_address: string | null; p_latitude: number | null; p_longitude: number | null; p_landmark: string | null; p_instructions: string | null; p_area_hint: string | null }; Returns: Json };
+server_home_service_availability_for_date: { Args: { p_service: string | null; p_date: string | null; p_staff: string | null; p_auth_user: string | null }; Returns: Json };
+admin_save_home_area: { Args: { p_latitude: number | null; p_longitude: number | null; p_radius_km: number | null }; Returns: undefined };
+admin_customer_directory: { Args: { p_kind: string | null; p_query: string | null; p_page: number | null }; Returns: Json };
+catalog_reorder_categories: { Args: { p_category_ids: Json | null }; Returns: undefined };
 owner_staff_access: { Args: {  }; Returns: Json };
 set_booking_approval_mode: { Args: { p_mode: string | null }; Returns: string };
 manage_owner_admins: { Args: { p_action: string | null; p_user?: string | null; p_email?: string | null }; Returns: Json };
@@ -1049,6 +1099,7 @@ owner_notification_outbox: { Args: { p_limit?: number | null }; Returns: { id: s
 owner_notification_outbox_context: { Args: { p_limit?: number | null }; Returns: { id: string; kind: string; state: Database["public"]["Enums"]["job_state"]; attempts: number; created_at: string; last_attempt_at: string | null; available_at: string; locked_until: string | null; last_error: string | null; delivered_at: string | null; public_reference: string | null; appointment_state: Database["public"]["Enums"]["appointment_state"] | null; event_state: Database["public"]["Enums"]["appointment_state"] | null; provider_receipts: Json }[] };
 }; Enums: {
 app_role: "OWNER" | "ADMIN" | "STAFF";
+appointment_fulfillment_mode: "BUSINESS_LOCATION" | "HOME_SERVICE";
 appointment_state: "PENDING" | "DECLINED" | "ACCEPTED" | "AWAITING_PAYMENT" | "PAYMENT_EXPIRED" | "CONFIRMED" | "CHECKED_IN" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED" | "NO_SHOW";
 job_state: "PENDING" | "PROCESSING" | "DELIVERED" | "FAILED";
 note_visibility: "INTERNAL" | "CUSTOMER";

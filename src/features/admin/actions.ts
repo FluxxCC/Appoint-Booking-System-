@@ -3,7 +3,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireArea } from "@/lib/auth/access.server";
 import type { FormState } from "@/features/auth/schemas";
-import { settingsSchema, hoursSchema, closureSchema, announcementSchema } from "./schemas";
+import { settingsSchema,homeAreaSchema, hoursSchema, closureSchema, announcementSchema } from "./schemas";
 
 function invalid(error: z.ZodError): FormState { return { error: error.issues.map(x=>`${x.path.join(".") || "Form"}: ${x.message}`).join(" ") }; }
 function result(error: {code?:string;message:string}|null): FormState {
@@ -26,6 +26,15 @@ export async function saveSettings(_state: FormState, form: FormData): Promise<F
   if (!parsed.success) return invalid(parsed.error);
   const {error}=await supabase.rpc("admin_save_settings",{p_values:parsed.data});
   return result(error);
+}
+export async function saveHomeArea(_state:FormState,form:FormData):Promise<FormState>{
+ const {supabase}=await requireArea("admin");
+ const parsed=homeAreaSchema.safeParse({latitude:form.get("latitude")??"",longitude:form.get("longitude")??"",radius:form.get("radius")??""});
+ if(!parsed.success)return invalid(parsed.error);
+ const {error}=await supabase.rpc("admin_save_home_area",{p_latitude:parsed.data.latitude,p_longitude:parsed.data.longitude,p_radius_km:parsed.data.radius});
+ if(error)return {error:error.message.includes("map pin")?"Set a business map pin before enabling radius enforcement.":"Home Service area could not be saved. Verify the coordinates and radius."};
+  revalidatePath("/admin","layout");revalidatePath("/","page");revalidatePath("/book","page");
+ return {success:"Home Service area saved."};
 }
 export async function saveApprovalMode(_state: FormState, form: FormData): Promise<FormState> {
   const {supabase}=await requireArea("admin");

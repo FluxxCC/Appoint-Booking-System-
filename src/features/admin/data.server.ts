@@ -2,9 +2,52 @@ import "server-only";
 import { z } from "zod";
 import { requireArea } from "@/lib/auth/access.server";
 import { filtersSchema } from "./schemas";
-import type { AdminData } from "./types";
+import type { AdminData, Appointment } from "./types";
+import { deriveHomeServiceStatus } from "./home-service-status";
 
 export type SearchParams = Record<string,string|string[]|undefined>;
+const customerDirectoryFiltersSchema = z.object({
+  kind: z.enum(["accounts", "guests"]).default("accounts"),
+  q: z.string().trim().max(100).default(""),
+  page: z.coerce.number().int().min(1).max(10000).default(1),
+});
+export async function readCustomerDirectory(search: SearchParams = {}) {
+  const parsed = customerDirectoryFiltersSchema.safeParse({ kind: search.kind, q: search.q, page: search.page });
+  if (!parsed.success) throw new Error("Invalid customer directory filters. Clear the filters and try again.");
+  const { supabase } = await requireArea("admin");
+  const { data, error } = await supabase.rpc("admin_customer_directory", {
+    p_kind: parsed.data.kind,
+    p_query: parsed.data.q,
+    p_page: parsed.data.page,
+  });
+  if (error || !data || typeof data !== "object" || Array.isArray(data)) {
+    throw new Error("Customer records could not be loaded. Apply the customer directory migration and try again.");
+  }
+  return {
+    data: data as unknown as { customers: NonNullable<AdminData["customers"]>; total: number; page: number; timezone: string },
+    filters: parsed.data,
+  };
+}
+
+/** Read the complete service list through the existing MFA-protected admin catalog RPC. */
+export async function readHomeServiceStatus(supabase: Awaited<ReturnType<typeof requireArea>>["supabase"]) {
+  const services: { active: boolean; published: boolean; supports_home_service: boolean; category_id?: string | null }[] = [];
+  let categories: { id: string; active: boolean; published: boolean }[] = [];
+  let business: AdminData["business"] = null;
+  let total = 0;
+  for (let page = 1; page <= 10000; page += 1) {
+    const { data, error } = await supabase.rpc("catalog_data", { p_kind: "services", p_page: page });
+    if (error || !data || typeof data !== "object" || Array.isArray(data)) throw new Error("Home Service status could not be loaded.");
+    const result = data as unknown as { business: AdminData["business"]; total: number; services: typeof services; categories: typeof categories };
+    business = result.business;
+    total = result.total;
+    categories = result.categories ?? [];
+    services.push(...(result.services ?? []));
+    if (services.length >= total || !result.services?.length) break;
+  }
+  return deriveHomeServiceStatus(business, services, categories);
+}
+
 export async function readAdmin(section: "dashboard"|"settings"|"closures"|"announcements"|"appointments"|"appointment"|"calendar"|"customers"|"customer"|"payments"|"reports", search: SearchParams = {}, id?: string) {
   const { supabase } = await requireArea("admin");
   const parsed = filtersSchema.safeParse({ q: search.q, status: search.status, date: search.date, page: search.page });
@@ -41,6 +84,16 @@ export async function readAdmin(section: "dashboard"|"settings"|"closures"|"anno
         customer_kind: customer?.auth_user_id ? "Customer" : "Guest",
       };
     });
+  }
+  if(["appointments","appointment","calendar","dashboard","customer"].includes(section)){
+    const lists=[adminData.appointments,adminData.schedule,adminData.pending,adminData.upcoming].filter((x):x is Appointment[]=>Array.isArray(x));
+    const rows=lists.flat();const ids=[...new Set(rows.map(row=>row.id))];
+    if(ids.length){
+      const {data:locations,error:locationError}=await supabase.from("appointment_home_locations").select("appointment_id,address,latitude,longitude,landmark,instructions").in("appointment_id",ids);
+      if(locationError)throw new Error("Appointment destination details could not be loaded.");
+      const map=new Map((locations??[]).map(location=>[location.appointment_id,{address:location.address,latitude:Number(location.latitude),longitude:Number(location.longitude),landmark:location.landmark,instructions:location.instructions}]));
+      for(const list of lists)for(let i=0;i<list.length;i++)list[i]={...list[i],home_location:map.get(list[i].id)??null};
+    }
   }
   return { data: adminData, filters, supabase };
 }

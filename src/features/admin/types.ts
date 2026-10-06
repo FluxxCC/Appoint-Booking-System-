@@ -1,6 +1,6 @@
 import type { Database } from "@/types/database.generated";
 type Row<T extends keyof Database["public"]["Tables"]> = Database["public"]["Tables"][T]["Row"];
-export type Appointment = Row<"appointments"> & { customer_name: string; staff_name: string; service_name?: string; collected_amount?: string };
+export type Appointment = Row<"appointments"> & { customer_name: string; staff_name: string; service_name?: string; collected_amount?: string; home_location?:Pick<Row<"appointment_home_locations">,"address"|"latitude"|"longitude"|"landmark"|"instructions">|null };
 export type Customer = Pick<Row<"customers">,"id"|"display_name"|"email"|"phone"> & { appointment_count?: number; last_appointment?: string|null; next_appointment?: string|null };
 export type Payment = Pick<Row<"payments">,"id"|"amount"|"currency"|"state"|"provider"|"paid_at"|"created_at"|"exception_reason"> & { appointment_id?: string; appointment_state?: string; customer_name?: string; customer_kind?: "Customer"|"Guest"; public_reference?: string; provider_reference?: string|null; payment_mode_snapshot?: string; refunds?: {state:string;amount:number}[] };
 export type AdminData = {

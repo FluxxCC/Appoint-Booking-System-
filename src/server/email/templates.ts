@@ -11,6 +11,7 @@ export type AppointmentEmailDetails = {
   reference: string;
   serviceName: string;
   staffName: string;
+  fulfillmentMode?: "BUSINESS_LOCATION" | "HOME_SERVICE";
   startsAt: string;
   timezone: string;
   business: EmailBusiness;
@@ -80,6 +81,7 @@ export function renderAppointmentEmail(input: AppointmentEmailDetails): Transact
     ["Booking reference", input.reference],
     ["Service", input.serviceName],
     ["Professional", input.staffName],
+    ...(input.fulfillmentMode === "HOME_SERVICE" ? [["Location", "Home Service"] as const] : []),
     ["Appointment", formatBusinessTime(input.startsAt, input.timezone)],
   ] as const;
   const dataRows = details.map(([label, value]) => `<tr><th align="left" style="padding:6px 16px 6px 0;color:#687783;font-weight:400">${label}</th><td style="padding:6px 0;font-weight:600">${escapeHtml(value)}</td></tr>`).join("");

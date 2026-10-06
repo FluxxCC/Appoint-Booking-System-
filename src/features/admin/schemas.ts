@@ -3,6 +3,7 @@ import { z } from "zod";
 export const appointmentStates = ["PENDING", "DECLINED", "ACCEPTED", "AWAITING_PAYMENT", "PAYMENT_EXPIRED", "CONFIRMED", "CHECKED_IN", "IN_PROGRESS", "COMPLETED", "CANCELLED", "NO_SHOW"] as const;
 const integer = (min: number, max: number) => z.coerce.number().int().min(min).max(max);
 export const dateSchema = z.iso.date();
+export const homeAreaSchema=z.object({latitude:z.union([z.literal(""),z.string().trim()]).transform(v=>v===""?null:Number(v)).refine(v=>v===null||Number.isFinite(v)&&v>=-90&&v<=90,"Latitude must be between -90 and 90."),longitude:z.union([z.literal(""),z.string().trim()]).transform(v=>v===""?null:Number(v)).refine(v=>v===null||Number.isFinite(v)&&v>=-180&&v<=180,"Longitude must be between -180 and 180."),radius:z.union([z.literal(""),z.string().trim()]).transform(v=>v===""?null:Number(v)).refine(v=>v===null||Number.isFinite(v)&&v>=0.1&&v<=500,"Radius must be between 0.1 and 500 km.")}).refine(v=>(v.latitude===null)===(v.longitude===null),{path:["longitude"],message:"Enter both map coordinates."}).refine(v=>v.radius===null||v.latitude!==null,{path:["radius"],message:"Set the business map pin before enabling radius enforcement."});
 const timeSchema = z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/, "Use a valid time.");
 const localSchema = z.string().refine(value => value === "" || z.iso.datetime({ local: true }).safeParse(value.length === 16 ? `${value}:00` : value).success, "Use a valid local date and time.");
 export const settingsSchema = z.object({

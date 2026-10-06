@@ -46,7 +46,7 @@ async function loadBusiness() {
 
 async function appointmentEmailData(client: ReturnType<typeof createPrivilegedClient>, appointmentId: string) {
   const { data: appointment, error } = await client.from("appointments")
-    .select("id,public_reference,state,starts_at,currency,total_amount,required_payment_amount,payment_due_at,customer_id,staff_id")
+    .select("id,public_reference,state,starts_at,currency,total_amount,required_payment_amount,payment_due_at,customer_id,staff_id,fulfillment_mode")
     .eq("id", appointmentId).maybeSingle();
   if (error || !appointment) throw new DeliveryFailure("unsupported_event", false);
   const [item, staff, customer] = await Promise.all([
@@ -181,6 +181,7 @@ async function deliverStateChanged(job: OutboxRow) {
     const email = {
       to: recipient.email, kind, reference: context.appointment.public_reference,
       serviceName: context.serviceName, staffName: context.staff.display_name,
+      fulfillmentMode: context.appointment.fulfillment_mode,
       startsAt: context.appointment.starts_at, timezone: business.timezone, business: brand, ctaUrl,
       ctaLabel: recipient.guest ? "View booking" : "View appointment",
       declineReason: kind === "booking.declined" && event.reason
@@ -201,6 +202,7 @@ async function deliverStateChanged(job: OutboxRow) {
       sends.push(sendToRecipient({
         to: email, kind: "business.new_booking", reference: context.appointment.public_reference,
         serviceName: context.serviceName, staffName: context.staff.display_name,
+        fulfillmentMode: context.appointment.fulfillment_mode,
         startsAt: context.appointment.starts_at, timezone: business.timezone, business: brand, ctaUrl,
       }, job, "assigned_staff"));
     }
@@ -211,6 +213,7 @@ async function deliverStateChanged(job: OutboxRow) {
       sends.push(sendToRecipient({
         to: recipient.email, kind: "business.new_booking", reference: context.appointment.public_reference,
         serviceName: context.serviceName, staffName: context.staff.display_name,
+        fulfillmentMode: context.appointment.fulfillment_mode,
         startsAt: context.appointment.starts_at, timezone: business.timezone, business: brand, ctaUrl,
       }, job, recipient.role));
     }
