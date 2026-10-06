@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Page } from "./fixtures";
 
 const stub = "http://127.0.0.1:54322";
 const futureDate = () => {
@@ -18,15 +18,20 @@ async function book(page: Page, email = "guest-e2e@example.test") {
   await page.getByRole("button", { name: "Continue" }).click();
   await page.getByLabel("Full name").fill("Guest E2E Customer");
   const emailField = page.getByLabel("Email address");
-  if (await emailField.isEditable()) await emailField.fill(email);
+  const guest = await emailField.isEditable();
+  if (guest) await emailField.fill(email);
   await page.getByRole("button", { name: "Continue" }).click();
   await Promise.all([
-    page.waitForURL(/\/book\/confirmation\?id=/),
+    page.waitForURL(guest ? /\/book\/confirmation\?id=/ : /\/account\/appointments\/[^/]+$/),
     page.locator('button[type="submit"]').evaluate(button => (button as HTMLButtonElement).click()),
   ]);
+  const url = new URL(page.url());
+  const referenceText = await page.getByText(/BK-[A-F0-9]{16}/).first().textContent();
+  const reference = referenceText?.match(/BK-[A-F0-9]{16}/)?.[0];
+  expect(reference).toBeTruthy();
   return {
-    id: new URL(page.url()).searchParams.get("id")!,
-    reference: (await page.locator(".font-mono").textContent())!.trim(),
+    id: guest ? url.searchParams.get("id")! : url.pathname.split("/").at(-1)!,
+    reference: reference!,
   };
 }
 
@@ -55,7 +60,7 @@ test("guest booking stays account optional and opens a scoped pending portal", a
   await expect(page.getByText(/private access link is queued/i)).toBeVisible();
   await page.getByRole("link", { name: "View booking" }).click();
   await expect(page.getByText(reference)).toBeVisible();
-  await expect(page.getByText("Waiting for approval")).toBeVisible();
+  await expect(page.getByText("Waiting for approval", { exact: true })).toBeVisible();
   const fresh = await browser.newPage();
   await fresh.goto(`/booking/manage?id=${id}`);
   await expect(fresh.getByRole("heading", { name: "Manage a guest booking" })).toBeVisible();
@@ -78,8 +83,8 @@ test("a committed guest booking is immediately emailed through the outbox and ac
   expect(ownerLink).toBeTruthy();
   const owner = await browser.newPage();
   await owner.goto(ownerLink!);
-  await expect(owner).toHaveURL(/\/login\?next=/);
-  await owner.getByLabel("Email address").fill("owner@example.test");
+  await expect(owner).toHaveURL(/\/admin\/login\?next=/);
+  await owner.getByLabel("Account email").fill("owner@example.test");
   await owner.locator('input[name="password"]').fill("e2e-owner-passphrase");
   await owner.getByRole("button", { name: "Sign in" }).click();
   await expect(owner).toHaveURL(new RegExp(`/admin/appointments/${id}`));
@@ -110,8 +115,8 @@ test("staff operational email requires sign-in and returns to its assigned reque
   expect(String(message.text)).toContain(`/auth/continue?next=${encodeURIComponent(destination)}`);
   const fresh = await browser.newPage();
   await fresh.goto(`http://127.0.0.1:3100/auth/continue?next=${encodeURIComponent(destination)}`);
-  await expect(fresh).toHaveURL(/\/login\?next=/);
-  await fresh.getByLabel("Email address").fill("staff@example.test");
+  await expect(fresh).toHaveURL(/\/staff\/login\?next=/);
+  await fresh.getByLabel("Account email").fill("staff@example.test");
   await fresh.locator('input[name="password"]').fill("e2e-staff-passphrase");
   await fresh.getByRole("button", { name: "Sign in" }).click();
   await expect(fresh).toHaveURL(new RegExp(`/staff/appointments\\?focus=${id}#appointment-${id}`));
@@ -195,7 +200,7 @@ test("guest payment state is available without an account", async ({ page, reque
   await expect(page.getByRole("heading", { name: "Payment required" })).toBeVisible();
   await page.getByRole("link", { name: "View booking" }).click();
   await expect(page.getByText("Payment required").first()).toBeVisible();
-  await expect(page.getByText(/payment deadline/i)).toBeVisible();
+  await expect(page.getByText(/pay by/i)).toBeVisible();
   await expect(page.getByRole("button", { name: /Pay online/i })).toBeEnabled();
 });
 
@@ -274,7 +279,7 @@ test("signed-in booking explains identity, locks verified email, and sign-out re
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page).toHaveURL(/\/account/);
   await page.goto("/book?service=consultation");
-  await expect(page.getByRole("link", { name: "My account" })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "account navigation" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Workspace" })).toHaveCount(0);
   await page.getByRole("button", { name: "Continue" }).click();
   await page.locator('input[name="staffChoice"]').first().check();

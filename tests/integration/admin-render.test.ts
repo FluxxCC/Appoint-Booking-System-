@@ -2,16 +2,17 @@ import {beforeEach,it,expect,vi} from "vitest";
 import {renderToStaticMarkup} from "react-dom/server";
 import {mkdir,readFile,readdir,writeFile} from "node:fs/promises";
 const mocks=vi.hoisted(()=>({read:vi.fn()}));
-vi.mock("@/features/admin/data.server",()=>({readAdmin:mocks.read}));
+vi.mock("@/features/admin/data.server",()=>({readAdmin:mocks.read,readHomeServiceStatus:vi.fn(async()=>({state:"SETUP_REQUIRED",publishedServices:0,message:"Add the business service-area map pin to finish setup.",href:"/admin/settings",action:"Configure Home Service"})),readCustomerDirectory:vi.fn(async()=>({data:{customers:[],total:0,page:1,timezone:"UTC"},filters:{kind:"accounts",q:"",page:1}}))}));
 vi.mock("next/navigation",()=>({usePathname:()=>"/admin",notFound:()=>{throw new Error("NOT_FOUND");}}));
-vi.mock("@/features/admin/actions",()=>({saveSettings:vi.fn(),saveApprovalMode:vi.fn(),saveHours:vi.fn(),saveClosure:vi.fn(),saveAnnouncement:vi.fn(),deleteClosure:vi.fn(),deleteAnnouncement:vi.fn()}));
+vi.mock("@/features/admin/actions",()=>({saveSettings:vi.fn(),saveHomeArea:vi.fn(),saveApprovalMode:vi.fn(),saveHours:vi.fn(),saveClosure:vi.fn(),saveAnnouncement:vi.fn(),deleteClosure:vi.fn(),deleteAnnouncement:vi.fn()}));
 vi.mock("@/features/appointments/actions",()=>({acceptAsAdmin:vi.fn(),declineAsAdmin:vi.fn(),advanceAsAdmin:vi.fn()}));
 vi.mock("@/features/auth/actions",()=>({logoutAction:vi.fn()}));
 import {DashboardPage,SettingsPage,AppointmentsPage,CalendarPage,ClosuresPage,AnnouncementsPage,CustomersPage,PaymentsPage,ReportsPage,AppointmentPage,CustomerPage} from "../../src/features/admin/pages";
 import {AppShell} from "../../src/components/layout/app-shell";
 const empty={business:null,date:"2026-09-30",page:1,total:0,hours:[],appointments:[],schedule:[],pending:[],upcoming:[],customers:[],payments:[],announcements:[],closures:[],activity:[],by_status:[],money:[],stats:{today:0,pending:0,confirmed:0,completed:0,no_show:0,upcoming:0}};
 const principal={userId:"00000000-0000-0000-0000-000000000001",email:"owner@example.test",roles:["OWNER" as const],profileActive:true,staffActive:false,aal:"aal2" as const};
-beforeEach(()=>{mocks.read.mockResolvedValue({data:empty,filters:{q:"",status:"",date:"",page:1}});});
+const query={select:()=>query,gte:()=>query,lt:()=>query,order:()=>query,range:async()=>({data:[],error:null})};
+beforeEach(()=>{mocks.read.mockResolvedValue({data:empty,filters:{q:"",status:"",date:"",page:1},supabase:{from:()=>query}});});
 it("renders every empty admin view without fabricating records",async()=>{
   for(const page of [()=>DashboardPage(),()=>SettingsPage(),()=>AppointmentsPage({search:{}}),()=>CalendarPage({search:{}}),()=>ClosuresPage({search:{}}),()=>AnnouncementsPage({search:{}}),()=>CustomersPage({search:{}}),()=>PaymentsPage({search:{}}),()=>ReportsPage()]) {
     const html=renderToStaticMarkup(await page());expect(html).toContain("<h1");expect(html).not.toContain("NaN");
@@ -20,6 +21,8 @@ it("renders every empty admin view without fabricating records",async()=>{
   expect(dashboard).toContain("No requests need review right now.");
   expect(dashboard).toContain("No appointments scheduled for today.");
   expect(dashboard).toContain("No upcoming reservations yet.");
+  expect(dashboard).toContain("Setup required");
+  expect(dashboard).toContain("Configure Home Service");
 });
 it("shows not found for absent appointment and customer records",async()=>{
   await expect(AppointmentPage({id:principal.userId})).rejects.toThrow("NOT_FOUND");

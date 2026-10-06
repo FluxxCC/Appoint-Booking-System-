@@ -72,5 +72,27 @@ try{
  equal('referenced image cannot be deleted',(await db.query('delete from storage.objects where name=$1 returning id',[path])).rows.length,0);
  await denied('stale image replacement rejected',"select public.catalog_set_image('services',$1,null,null)",[svc]);
  await scalar("select public.catalog_set_image('services',$1,null,$2)",[svc,path]);equal('unreferenced image can be cleaned up',(await db.query('delete from storage.objects where name=$1 returning id',[path])).rows.length,1);
+
+ const logoA=`appearance/logo/${randomUUID()}.webp`,logoB=`appearance/logo/${randomUUID()}.webp`,ownerHero=`appearance/hero/${randomUUID()}.webp`,adminLogo=`appearance/logo/${randomUUID()}.webp`,hero=`appearance/hero/${randomUUID()}.webp`;
+ await actor('authenticated',ids.owner,'aal2');equal('OWNER can insert a logo appearance object',(await db.query("insert into storage.objects(bucket_id,name) values('catalog-images',$1) returning id",[logoA])).rows.length,1);
+ equal('OWNER can insert a hero appearance object',(await db.query("insert into storage.objects(bucket_id,name) values('catalog-images',$1) returning id",[ownerHero])).rows.length,1);
+ await actor('authenticated',ids.admin,'aal2');equal('ADMIN can insert a logo appearance object',(await db.query("insert into storage.objects(bucket_id,name) values('catalog-images',$1) returning id",[adminLogo])).rows.length,1);
+ equal('ADMIN can insert a hero appearance object',(await db.query("insert into storage.objects(bucket_id,name) values('catalog-images',$1) returning id",[hero])).rows.length,1);
+ for(const [label,role,user] of [['anonymous','anon',''],['CUSTOMER','authenticated',ids.customerUser],['STAFF','authenticated',ids.staffUser]]){
+  await actor(role,user,'aal2');await denied(`${label} cannot upload appearance objects`,"insert into storage.objects(bucket_id,name) values('catalog-images',$1)",[logoB]);
+ }
+ await actor('authenticated',ids.admin,'aal2');
+ for(const invalid of [`appearance/random/${randomUUID()}.webp`,`other-folder/${randomUUID()}.webp`,'appearance/logo/not-valid-file.txt'])await denied('appearance policy rejects invalid paths',"insert into storage.objects(bucket_id,name) values('catalog-images',$1)",[invalid]);
+ await db.query("insert into storage.objects(bucket_id,name) values('catalog-images',$1)",[logoB]);
+ await db.query("insert into public.website_settings(singleton,logo_path) values(true,$1)",[logoA]);
+ equal('referenced appearance logo cannot be deleted',(await db.query('delete from storage.objects where bucket_id=\'catalog-images\' and name=$1 returning id',[logoA])).rows.length,0);
+ await actor('service_role');await db.query('update public.website_settings set logo_path=$1 where singleton=true',[logoB]);
+ await actor('authenticated',ids.owner,'aal2');equal('replaced appearance logo is eligible for cleanup',(await db.query('delete from storage.objects where bucket_id=\'catalog-images\' and name=$1 returning id',[logoA])).rows.length,1);
+ equal('current appearance logo remains protected',(await db.query('delete from storage.objects where bucket_id=\'catalog-images\' and name=$1 returning id',[logoB])).rows.length,0);
+ await actor('service_role');await db.query('update public.website_settings set logo_path=null where singleton=true');
+ await actor('authenticated',ids.admin,'aal2');equal('removed appearance logo is eligible for cleanup',(await db.query('delete from storage.objects where bucket_id=\'catalog-images\' and name=$1 returning id',[logoB])).rows.length,1);
+ equal('hero appearance object can be cleaned when unreferenced',(await db.query('delete from storage.objects where bucket_id=\'catalog-images\' and name=$1 returning id',[hero])).rows.length,1);
+ equal('owner hero appearance object can be cleaned when unreferenced',(await db.query('delete from storage.objects where bucket_id=\'catalog-images\' and name=$1 returning id',[ownerHero])).rows.length,1);
+ equal('admin logo appearance object can be cleaned when unreferenced',(await db.query('delete from storage.objects where bucket_id=\'catalog-images\' and name=$1 returning id',[adminLogo])).rows.length,1);
  console.log(`PASS: ${checks} Phase 5 catalog, staff, schedule and Storage policy database checks.`);
 }finally{await db.close();}

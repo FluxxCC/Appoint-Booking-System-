@@ -1,4 +1,4 @@
-import { expect, test, type Page, type APIRequestContext } from "@playwright/test";
+import { expect, test, type Page, type APIRequestContext } from "./fixtures";
 
 const serviceUrl = "/book?service=consultation";
 const stub = "http://127.0.0.1:54322";
@@ -37,7 +37,7 @@ async function reachTimeStep(page: Page, browseCatalog = false) {
   await page.getByRole("heading", { name: "Choose a time" }).waitFor();
 }
 
-async function completeGuestRequest(page: Page) {
+async function completeGuestRequest(page: Page, registeredCustomer = false) {
   await page.getByRole("button", { name: "10:00" }).click();
   await page.getByRole("button", { name: "Continue" }).click();
   await page.getByLabel("Full name").fill("Guest E2E Customer");
@@ -47,7 +47,7 @@ async function completeGuestRequest(page: Page) {
   await expect(page.getByRole("heading", { name: "Review your request" })).toBeVisible();
   await expect(page.getByText(/submitting does not reserve this time/i)).toBeVisible();
   await Promise.all([
-    page.waitForURL(/\/book\/confirmation\?id=/),
+    page.waitForURL(registeredCustomer ? /\/account\/appointments\/[^/]+$/ : /\/book\/confirmation\?id=/),
     page.locator('button[type="submit"]').evaluate(button => (button as HTMLButtonElement).click()),
   ]);
 }
@@ -77,8 +77,7 @@ test("registered customer can book and see only their own appointment", async ({
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page).toHaveURL(/\/account/);
   await reachTimeStep(page);
-  await completeGuestRequest(page);
-  await page.getByRole("link", { name: "View booking" }).click();
+  await completeGuestRequest(page, true);
   await expect(page.getByRole("heading", { name: "Consultation" })).toBeVisible();
   const id = page.url().split("/").at(-1);
   await page.goto(`/account/appointments/${id}`);
@@ -106,9 +105,69 @@ test("guest retries reuse the request key and do not create another appointment"
   await expect(page.locator('p[role="alert"]')).toContainText(/retry does not create new guest access/i);
   expect(new URL(page.url()).searchParams.get("id")).not.toBe(firstId);
   const stats = await (await request.get(`${stub}/__e2e/stats`)).json();
-  expect(stats).toMatchObject({ appointments: 1, requestKeys: 1, outboxDispatches: 2 });
+  expect(stats).toMatchObject({ appointments: 1, requestKeys: 1 });
+  expect(stats.outbox).toEqual([{ state: "DELIVERED", attempts: 1, last_error: null }]);
   expect(stats.receipts).toBe(2);
   expect((await (await request.get(`${stub}/__e2e/mailbox`)).json()).emails).toHaveLength(2);
+});
+
+test("workspace appointment badges are role-scoped, clear on visit, and include new requests", async ({ page, browser, request }) => {
+  async function createPendingRequest(suffix: string) {
+    const response = await request.post(`${stub}/rest/v1/rpc/server_public_booking_submit`, {
+      headers: { apikey: "e2e-test-publishable-key" },
+      data: {
+        p_service: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        p_staff: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        p_start: `2030-01-0${suffix === "first" ? "1" : "2"}T10:00:00.000Z`,
+        p_request_key: crypto.randomUUID(),
+        p_name: "Badge Regression Customer",
+        p_email: `badge-${suffix}@example.test`,
+        p_phone: null,
+        p_auth_user: null,
+      },
+    });
+    expect(response.ok()).toBeTruthy();
+  }
+
+  async function signIn(target: import("@playwright/test").Page, email: string, password: string, portal: string) {
+    await target.goto(portal);
+    await target.getByLabel(portal === "/login" ? "Email address" : "Account email").fill(email);
+    await target.locator('input[name="password"]').fill(password);
+    await target.getByRole("button", { name: "Sign in" }).click();
+    await expect(target).not.toHaveURL(/\/login/, { timeout: 15_000 });
+  }
+
+  await createPendingRequest("first");
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await signIn(page, "owner@example.test", "e2e-owner-passphrase", "/owner/login");
+  const ownerNav = page.getByRole("navigation", { name: "admin navigation" });
+  await expect(ownerNav.getByLabel("1 new appointment requests")).toBeVisible();
+  await ownerNav.getByRole("link", { name: /Appointments/ }).click();
+  await expect(ownerNav.getByLabel("1 new appointment requests")).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByRole("navigation", { name: "admin navigation" }).getByLabel("1 new appointment requests")).toHaveCount(0);
+
+  await createPendingRequest("second");
+  await page.reload();
+  await expect(page.getByRole("navigation", { name: "admin navigation" }).getByLabel("1 new appointment requests")).toBeVisible();
+
+  const admin = await browser.newPage();
+  await signIn(admin, "admin@example.test", "e2e-admin-passphrase", "/admin/login");
+  await expect(admin.getByRole("navigation", { name: "admin navigation" }).getByLabel("2 new appointment requests")).toBeVisible();
+  await admin.close();
+
+  const staff = await browser.newPage();
+  await signIn(staff, "staff@example.test", "e2e-staff-passphrase", "/staff/login");
+  const staffNav = staff.getByRole("navigation", { name: "staff navigation" });
+  await expect(staffNav.getByLabel("2 new appointment requests")).toBeVisible();
+  await staffNav.getByRole("link", { name: /Appointments/ }).click();
+  await expect(staffNav.getByLabel("2 new appointment requests")).toHaveCount(0);
+  await staff.close();
+
+  const customer = await browser.newPage();
+  await signIn(customer, "customer@example.test", "e2e-customer-passphrase", "/login");
+  await expect(customer.locator(".workspace-navigation [aria-label$='new appointment requests']")).toHaveCount(0);
+  await customer.close();
 });
 
 test("guest and registration settings and availability empty/error states have clear responses", async ({ page, request }) => {

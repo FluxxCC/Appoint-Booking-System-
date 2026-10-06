@@ -4,7 +4,7 @@ import { createDatabase } from './database-harness.mjs';
 
 const db = await createDatabase();
 let checks = 0;
-const ids = Object.fromEntries(['owner','staffUser','otherStaffUser','customerUser','otherCustomerUser','staff','otherStaff','customer','otherCustomer','service','cashService','policy'].map(k=>[k,randomUUID()]));
+const ids = Object.fromEntries(['owner','admin','staffUser','otherStaffUser','customerUser','otherCustomerUser','staff','otherStaff','customer','otherCustomer','service','cashService','policy'].map(k=>[k,randomUUID()]));
 async function actor(role, user = '', aal = 'aal1') {
   await db.exec('reset role');
   await db.query("select set_config('request.jwt.claim.sub',$1,false),set_config('request.jwt.claims',$2,false)",[user,JSON.stringify({sub:user,aal})]);
@@ -18,9 +18,9 @@ function equal(label,actual,expected) { assert.deepEqual(actual,expected,label);
 async function scalar(sql,params=[]) { return Object.values((await db.query(sql,params)).rows[0])[0]; }
 
 try {
-  for(const name of ['owner','staffUser','otherStaffUser','customerUser','otherCustomerUser'])
+  for(const name of ['owner','admin','staffUser','otherStaffUser','customerUser','otherCustomerUser'])
     await db.query('insert into auth.users(id,email) values ($1,$2)',[ids[name],`${name}@example.test`]);
-  await db.query("insert into public.user_roles(auth_user_id,role) values ($1,'OWNER'),($2,'STAFF'),($3,'STAFF')",[ids.owner,ids.staffUser,ids.otherStaffUser]);
+  await db.query("insert into public.user_roles(auth_user_id,role) values ($1,'OWNER'),($2,'ADMIN'),($3,'STAFF'),($4,'STAFF')",[ids.owner,ids.admin,ids.staffUser,ids.otherStaffUser]);
   await db.exec("insert into public.business_settings(name,timezone,currency,published,booking_approval_mode) values ('Test business','UTC','USD',true,'STAFF_APPROVAL')");
   await db.query("insert into public.booking_policy_versions(id,version,terms,published,minimum_notice_minutes) values ($1,1,'Test terms',true,0)",[ids.policy]);
   await db.query("insert into public.staff(id,auth_user_id,display_name,slug,published,bookable) values ($1,$2,'Barber','barber',true,true),($3,$4,'Other','other',true,true)",[ids.staff,ids.staffUser,ids.otherStaff,ids.otherStaffUser]);
@@ -34,7 +34,52 @@ try {
   const later=(minutes)=>new Date(date.getTime()+minutes*60000).toISOString();
   const request=async(customer,service=ids.service,time=start,staff=ids.staff,key=randomUUID())=>scalar('select public.request_appointment($1,$2,$3,$4,$5)',[customer,staff,service,time,key]);
 
-  equal('all 26 tables have RLS', await scalar("select count(*)::int from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='r' and c.relrowsecurity"),26);
+  equal('all 27 tables have RLS', await scalar("select count(*)::int from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='r' and c.relrowsecurity"),27);
+  await db.query("update public.services set supports_home_service=true,home_service_fee=700,home_travel_before_minutes=30,home_travel_after_minutes=20 where id=$1",[ids.service]);
+  await actor('authenticated',ids.owner,'aal2');
+  await db.query('select public.admin_save_home_area($1,$2,$3)',[14,120,10]);
+  equal('radius setting records only enforcement state',await scalar("select details->>'radius_enforced' from public.audit_logs where action='home_service.settings_changed' order by created_at desc limit 1"),'true');
+  await actor('authenticated',ids.admin,'aal2');
+  await db.query('select public.admin_save_home_area($1,$2,$3)',[14,120,10]);
+  equal('ADMIN can configure Home Service area',await scalar('select home_service_max_radius_km from public.business_settings'),'10.00');
+  await db.query("update public.services set deposit_amount=0,deposit_type='PERCENTAGE',deposit_percent_bps=3000 where id=$1",[ids.service]);
+  await actor('service_role');
+  await denied('guest cannot create Home Service even through trusted booking boundary',"select public.server_home_service_booking_submit($1,$2,$3,$4,$5,$6,$7,null,$8,$9,$10,null,null,$11)",[ids.service,ids.staff,later(300),randomUUID(),'Customer','a@example.test',null,'123 Main Street',14,120,'Test City'],/registered customer/);
+  const homeKey=randomUUID();
+  const home=await scalar("select public.server_home_service_booking_submit($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)->>'appointment_id'",[ids.service,ids.staff,later(300),homeKey,'Customer','a@example.test',null,ids.customerUser,'123 Main Street',14,120,'Blue gate','Second floor','Test City']);
+  equal('home appointment snapshots fulfillment',await scalar('select fulfillment_mode from public.appointments where id=$1',[home]),'HOME_SERVICE');
+  equal('home fee added in minor units',await scalar('select total_amount from public.appointments where id=$1',[home]),2700);
+  equal('percentage deposit includes Home Service fee',await scalar('select required_payment_amount from public.appointments where id=$1',[home]),810);
+  equal('travel buffers snapshotted',await scalar('select home_travel_before_snapshot+home_travel_after_snapshot from public.appointments where id=$1',[home]),50);
+  equal('occupied interval includes service buffers and travel',await scalar("select lower(occupied_range)=starts_at-interval '35 minutes' and upper(occupied_range)=ends_at+interval '30 minutes' from public.appointments where id=$1",[home]),true);
+  await actor('authenticated',ids.customerUser);
+  equal('customer sees own exact destination',await scalar('select count(*)::int from public.appointment_home_locations where appointment_id=$1',[home]),1);
+  await actor('authenticated',ids.otherCustomerUser);
+  equal('other customer cannot see exact destination',await scalar('select count(*)::int from public.appointment_home_locations where appointment_id=$1',[home]),0);
+  await actor('authenticated',ids.staffUser);
+  equal('assigned staff sees general area while request is pending',await scalar('select service_area_hint from public.appointments where id=$1',[home]),'Test City');
+  equal('assigned staff cannot see pending exact destination',await scalar('select count(*)::int from public.appointment_home_locations where appointment_id=$1',[home]),0);
+  await actor('authenticated',ids.otherStaffUser);
+  equal('unrelated staff cannot see pending destination',await scalar('select count(*)::int from public.appointment_home_locations where appointment_id=$1',[home]),0);
+  equal('unrelated staff cannot see pending Home Service appointment',await scalar('select count(*)::int from public.appointments where id=$1',[home]),0);
+  await actor('authenticated',ids.owner,'aal2');
+  equal('OWNER can access exact operational destination',await scalar('select count(*)::int from public.appointment_home_locations where appointment_id=$1',[home]),1);
+  await actor('authenticated',ids.admin,'aal2');
+  equal('ADMIN can access exact operational destination',await scalar('select count(*)::int from public.appointment_home_locations where appointment_id=$1',[home]),1);
+  await actor('anon');
+  await denied('anonymous cannot read private destination','select * from public.appointment_home_locations');
+  await actor('authenticated',ids.staffUser);
+  equal('assigned staff accepts Home Service request',await scalar('select public.accept_appointment($1)',[home]),'AWAITING_PAYMENT');
+  equal('assigned staff sees exact destination after acceptance',await scalar('select count(*)::int from public.appointment_home_locations where appointment_id=$1',[home]),1);
+  await actor('authenticated',ids.otherStaffUser);
+  equal('unrelated staff remains denied after acceptance',await scalar('select count(*)::int from public.appointment_home_locations where appointment_id=$1',[home]),0);
+  await actor('service_role');
+  await denied('outside-radius Home Service rejected server-side',"select public.server_home_service_booking_submit($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,null,null,$12)",[ids.service,ids.staff,later(360),randomUUID(),'Customer','a@example.test',null,ids.customerUser,'40 Outer Road',15,121,'Far City'],/outside the current Home Service area/);
+  const edgeAvailability=await scalar('select public.server_home_service_availability_for_date($1,$2,$3,$4)',[ids.service,date.toISOString().slice(0,10),ids.staff,ids.customerUser]);
+  equal('home travel buffer filters too-early slots',edgeAvailability.slots.some(slot=>slot.local_time==='08:00'),false);
+  equal('home travel buffer filters too-late slots',edgeAvailability.slots.some(slot=>slot.local_time==='19:30'),false);
+  await denied('travel occupancy prevents a conflicting Home Service booking',"select public.server_home_service_booking_submit($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,null,null,$12)",[ids.service,ids.staff,later(360),randomUUID(),'Customer','a@example.test',null,ids.customerUser,'123 Main Street',14,120,'Test City'],/no longer available/);
+  await db.query("update public.services set deposit_amount=500,deposit_type='FIXED',deposit_percent_bps=null where id=$1",[ids.service]);
   await actor('anon');
   equal('published services public',await scalar('select count(*)::int from public.services'),2);
   equal('safe staff columns public',await scalar('select count(id)::int from public.staff'),2);

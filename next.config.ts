@@ -3,7 +3,9 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   // Keep browser-test compilation/cache isolated from the developer's `.next`
   // output, which may have been produced against the real development project.
-  distDir: process.env.PLAYWRIGHT_TEST === "1" ? ".next-e2e" : ".next",
+  distDir: process.env.PLAYWRIGHT_TEST === "1"
+    ? process.env.PLAYWRIGHT_DIST_DIR ?? ".next-e2e"
+    : ".next",
   poweredByHeader: false,
   experimental: { serverActions: { bodySizeLimit: "3mb" } },
   async headers() {

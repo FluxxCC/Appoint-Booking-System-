@@ -40,7 +40,9 @@ p.pronargdefaults from pg_proc p join pg_namespace n on n.oid=p.pronamespace whe
 for(const fn of functions) {
   const args=[];
   for(let i=0;i<(fn.proargnames??[]).length;i++) {
-    const t=(await db.query('select typname from pg_type where oid=$1',[fn.argtypes[i]])).rows[0].typname;
+    const foundType=(await db.query('select typname from pg_type where oid=$1',[fn.argtypes[i]])).rows[0];
+    // PGlite may not expose every built-in/extension argument OID through pg_type.
+    const t=foundType?.typname??'text';
     // PostgreSQL routine arguments accept SQL NULL; validators enforce required values.
     args.push(`${fn.proargnames[i]}${i>=fn.proargnames.length-fn.pronargdefaults?'?':''}: ${type(t)} | null`);
   }

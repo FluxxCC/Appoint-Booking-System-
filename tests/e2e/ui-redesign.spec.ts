@@ -1,4 +1,13 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
+
+async function expectWorkspaceNavigation(page: import("@playwright/test").Page, area: "admin" | "staff" | "account", width: number) {
+  if (width < 640) {
+    await page.locator("details > summary").first().click();
+    await expect(page.getByRole("navigation", { name: `${area} menu` })).toBeVisible();
+  } else {
+    await expect(page.getByRole("navigation", { name: `${area} navigation` })).toBeVisible();
+  }
+}
 
 test("public journey keeps imagery and navigation usable across viewports", async ({ page, request }, testInfo) => {
   test.setTimeout(90_000);
@@ -46,24 +55,24 @@ test("management views remain navigable on a narrow screen", async ({ page, requ
   test.setTimeout(90_000);
   await request.put("http://127.0.0.1:54322/__e2e/state", { data: { reset: true } });
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/login");
-  await page.getByLabel("Email address").fill("owner@example.test");
+  await page.goto("/owner/login");
+  await page.getByLabel("Account email").fill("owner@example.test");
   await page.locator('input[name="password"]').fill("e2e-owner-passphrase");
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page).not.toHaveURL(/\/login/, { timeout: 15_000 });
   for (const width of [320, 375, 390, 430, 768]) {
     await page.setViewportSize({ width, height: 844 });
-    for (const [route, heading] of [["/admin", "E2E Test Studio overview"], ["/admin/appointments", "Appointments"], ["/admin/calendar", "Calendar"], ["/admin/services", "Services"], ["/admin/staff", "Staff"], ["/admin/settings", "Business settings"], ["/admin/access", "Administrator access"], ["/admin/staff/accounts", "Staff login access"]]) {
+    for (const [route, heading] of [["/admin", "Overview"], ["/admin/appointments", "Appointments"], ["/admin/calendar", "Calendar"], ["/admin/services", "Services"], ["/admin/staff", "Staff"], ["/admin/settings", "Business settings"], ["/admin/access", "Administrator access"], ["/admin/staff/accounts", "Staff login access"]]) {
       await page.goto(route);
       await expect(page.getByRole("heading", { name: heading, exact: true, level: 1 })).toBeVisible();
-      await expect(page.getByRole("navigation", { name: "admin quick navigation" })).toBeVisible();
+      await expectWorkspaceNavigation(page, "admin", width);
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
       expect(overflow, `${route} at ${width}px`).toBeLessThanOrEqual(1);
     }
   }
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/admin");
-  await expect(page.getByRole("heading", { name: "E2E Test Studio overview", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("owner-mobile.png"), fullPage: true, caret: "initial" });
   await page.goto("/admin/appointments");
   await expect(page.getByRole("heading", { name: "Appointments", exact: true, level: 1 })).toBeVisible();
@@ -80,20 +89,20 @@ test("staff and customer pages stay usable on phones", async ({ page, request },
   test.setTimeout(90_000);
   await request.put("http://127.0.0.1:54322/__e2e/state", { data: { reset: true } });
   await page.setViewportSize({ width: 390, height: 844 });
-  async function signIn(email: string, password: string) {
-    await page.goto("/login");
-    await page.getByLabel("Email address").fill(email);
+  async function signIn(email: string, password: string, portal: "/staff/login" | "/login") {
+    await page.goto(portal);
+    await page.getByLabel(portal === "/login" ? "Email address" : "Account email").fill(email);
     await page.locator('input[name="password"]').fill(password);
     await page.getByRole("button", { name: "Sign in" }).click();
     await expect(page).not.toHaveURL(/\/login/, { timeout: 15_000 });
   }
-  await signIn("staff@example.test", "e2e-staff-passphrase");
+  await signIn("staff@example.test", "e2e-staff-passphrase", "/staff/login");
   for (const width of [320, 375, 390, 430, 768]) {
     await page.setViewportSize({ width, height: 844 });
     for (const route of ["/staff", "/staff/calendar", "/staff/appointments", "/staff/availability"]) {
       await page.goto(route);
       await expect(page.locator("main h1").first()).toBeVisible();
-      await expect(page.getByRole("navigation", { name: "staff quick navigation" })).toBeVisible();
+      await expectWorkspaceNavigation(page, "staff", width);
       expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth), `${route} at ${width}px`).toBeLessThanOrEqual(1);
     }
   }
@@ -105,13 +114,13 @@ test("staff and customer pages stay usable on phones", async ({ page, request },
   await expect(page.getByRole("heading", { name: "Appointments", level: 1 })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("staff-appointments-mobile.png"), fullPage: true, caret: "initial" });
   await page.getByRole("button", { name: "Sign out" }).click();
-  await signIn("customer@example.test", "e2e-customer-passphrase");
+  await signIn("customer@example.test", "e2e-customer-passphrase", "/login");
   for (const width of [320, 375, 390, 430, 768]) {
     await page.setViewportSize({ width, height: 844 });
     for (const route of ["/account", "/account/appointments", "/account/payments", "/account/profile"]) {
       await page.goto(route);
       await expect(page.locator("main h1").first()).toBeVisible();
-      await expect(page.getByRole("navigation", { name: "account quick navigation" })).toBeVisible();
+      await expectWorkspaceNavigation(page, "account", width);
       expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth), `${route} at ${width}px`).toBeLessThanOrEqual(1);
     }
   }

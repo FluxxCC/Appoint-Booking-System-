@@ -20,6 +20,12 @@ export async function createDatabase() {
     $$;
     grant usage on schema auth to anon, authenticated, service_role;
     grant execute on all functions in schema auth to anon, authenticated, service_role;
+    -- Minimal Realtime shim for migrations that install payload-free refresh triggers.
+    create schema realtime;
+    create table realtime.messages(id bigint generated always as identity, extension text, topic text);
+    create function realtime.topic() returns text language sql stable as $$ select nullif(current_setting('realtime.topic',true),'') $$;
+    create function realtime.send(jsonb,text,text,boolean) returns void language sql as $$ select $$;
+    grant usage on schema realtime to anon,authenticated,service_role;
     -- Minimal Storage metadata shim for SQL policy tests; no Storage HTTP service.
     create schema storage;
     create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);

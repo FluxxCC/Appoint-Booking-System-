@@ -1,4 +1,5 @@
 import { createHash, generateKeyPairSync, randomUUID, randomBytes, sign as signJwt } from "node:crypto";
+import { appendFileSync } from "node:fs";
 import { createServer } from "node:http";
 
 const customerEmail = "customer@example.test", password = "e2e-customer-passphrase";
@@ -10,23 +11,26 @@ const jwks = { keys: [{ ...publicKey.export({ format: "jwk" }), kid: signingKid,
 const customerId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
 const otherCustomerId = "ffffffff-ffff-4fff-8fff-ffffffffffff";
 const ownerId = "11111111-1111-4111-8111-111111111111";
+const adminId = "33333333-3333-4333-8333-333333333333";
 const staffUserId = "22222222-2222-4222-8222-222222222222";
 const users = [
   { id: customerId, email: customerEmail, password, name: "E2E Customer", roles: [], aal: "aal1" },
   { id: otherCustomerId, email: "other-customer@example.test", password: "e2e-other-passphrase", name: "Other E2E Customer", roles: [], aal: "aal1" },
   { id: ownerId, email: "owner@example.test", password: "e2e-owner-passphrase", name: "E2E Owner", roles: ["OWNER"], aal: "aal2" },
+  { id: adminId, email: "admin@example.test", password: "e2e-admin-passphrase", name: "E2E Administrator", roles: ["ADMIN"], aal: "aal2" },
   { id: staffUserId, email: "staff@example.test", password: "e2e-staff-passphrase", name: "E2E Staff", roles: ["STAFF"], aal: "aal1" },
 ];
 const serviceId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const staffId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const otherAppointmentId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
-const state = { guest: true, registration: true, availability: "normal", approvalMode: "ADMIN_APPROVAL", appointments: new Map(), requests: new Map(), tokens: new Map(), exchanges: new Map(), events: new Map(), emails: [], outbox: [], receipts: [], outboxDispatches: 0, failOutboxClaim: false };
+const state = { guest: true, registration: true, availability: "normal", approvalMode: "ADMIN_APPROVAL", appointments: new Map(), requests: new Map(), tokens: new Map(), exchanges: new Map(), events: new Map(), emails: [], outbox: [], receipts: [], outboxDispatches: 0, failOutboxClaim: false, failStorageUploads: false, storageObjects: new Map(), websiteSettings: { id: "99999999-9999-4999-8999-999999999999", singleton: true, logo_path: null, hero_image_path: null, primary_color: "#0f766e", font_key: "system", sections: {}, published: true, updated_at: new Date().toISOString() }, redisCounters: new Map() };
 const business = { name: "E2E Test Studio", description: "A local test business.", timezone: "UTC", currency: "PHP", contact_email: "hello@example.test", contact_phone: null, address: "1 Test Way", guest_booking_enabled: true, customer_registration_enabled: true };
-const service = { id: serviceId, name: "Consultation", slug: "consultation", description: "A test service.", image_path: null, price_amount: 3500, duration_minutes: 45, category_id: null, payment_mode: "DEPOSIT", deposit_amount: 500 };
+const service = { id: serviceId, name: "Consultation", slug: "consultation", description: "A test service.", image_path: null, price_amount: 3500, duration_minutes: 45, category_id: null, payment_mode: "DEPOSIT", deposit_amount: 500, deposit_type: "FIXED", deposit_percent_bps: null, supports_business_location: true, supports_home_service: true, home_service_fee: 700 };
 const staff = { id: staffId, display_name: "Taylor", slug: "taylor", bio: "", photo_path: null };
 const policy = { terms: "Please contact the business to change a request.", minimum_notice_minutes: 0, maximum_advance_days: 90, cancellation_notice_minutes: 60 };
 function send(response, status, value, headers = {}) { response.writeHead(status, { "Content-Type": "application/json", ...headers }); response.end(JSON.stringify(value)); }
 async function body(request) { let value = ""; for await (const chunk of request) value += chunk; try { return JSON.parse(value || "{}"); } catch { return {}; } }
+async function rawBody(request) { const chunks = []; for await (const chunk of request) chunks.push(Buffer.from(chunk)); return Buffer.concat(chunks); }
 function authUser(user) { return { id: user.id, aud: "authenticated", role: "authenticated", email: user.email, email_confirmed_at: new Date().toISOString(), app_metadata: { provider: "email", providers: ["email"] }, user_metadata: { full_name: user.name }, is_anonymous: false }; }
 function tokenUser(request) { try { const token=request.headers.authorization?.split(" ")[1]??""; const payload=JSON.parse(Buffer.from(token.split(".")[1]??"","base64url").toString()); return users.find(user=>user.id===payload.sub)??null; } catch { return null; } }
 function accessToken(user) {
@@ -42,7 +46,26 @@ function addOutbox(appointment, kind, deduplicationKey) {
 }
 const server = createServer(async (request, response) => {
   const url = new URL(request.url ?? "/", `http://127.0.0.1:${port}`);
+  const traceHttp = process.env.E2E_TRACE_HTTP === "1";
+  if (traceHttp) {
+    const traceFile = process.env.E2E_TRACE_FILE;
+    const writeTrace = (line) => {
+      const entry = `[E2E stub] ${line} ${request.method} ${url.pathname}\n`;
+      if (traceFile) appendFileSync(traceFile, entry);
+      else console.log(entry.trimEnd());
+    };
+    writeTrace("<-");
+    response.once("finish", () => writeTrace(`-> ${response.statusCode}`));
+  }
   if (url.pathname === "/health") return send(response, 200, { ok: true });
+  if (url.pathname === "/redis" && request.method === "POST") {
+    if (request.headers.authorization !== "Bearer e2e-only") return send(response, 401, { error: "Unauthorized" });
+    const command = await body(request);
+    if (!Array.isArray(command) || command[0] !== "EVAL" || typeof command[3] !== "string") return send(response, 400, { error: "Unsupported test Redis command" });
+    const key = command[3], count = (state.redisCounters.get(key) ?? 0) + 1;
+    state.redisCounters.set(key, count);
+    return send(response, 200, { result: [count, Number(command[4]) || 60_000] });
+  }
   if (url.pathname === "/emails" && request.method === "POST") {
     state.emails.push(await body(request));
     return send(response, 200, { id: randomUUID() });
@@ -51,8 +74,9 @@ const server = createServer(async (request, response) => {
   if (url.pathname === "/auth/v1/.well-known/jwks.json") return send(response, 200, jwks);
   if (url.pathname === "/__e2e/state" && request.method === "PUT") {
     const next = await body(request); state.guest = next.guest ?? true; state.registration = next.registration ?? true; state.availability = next.availability ?? "normal"; state.approvalMode=next.approvalMode??"ADMIN_APPROVAL";
+    state.failStorageUploads = next.failStorageUploads ?? false;
     if (next.failOutboxClaim !== undefined) state.failOutboxClaim = next.failOutboxClaim;
-    if (next.reset) { state.appointments.clear(); state.requests.clear(); state.tokens.clear(); state.exchanges.clear(); state.events.clear(); state.outbox.length = 0; state.receipts.length = 0; state.emails.length = 0; state.outboxDispatches = 0; state.failOutboxClaim = next.failOutboxClaim ?? false; }
+    if (next.reset) { state.appointments.clear(); state.requests.clear(); state.tokens.clear(); state.exchanges.clear(); state.events.clear(); state.outbox.length = 0; state.receipts.length = 0; state.emails.length = 0; state.outboxDispatches = 0; state.failOutboxClaim = next.failOutboxClaim ?? false; state.failStorageUploads = next.failStorageUploads ?? false; state.storageObjects.clear(); state.websiteSettings = { id: "99999999-9999-4999-8999-999999999999", singleton: true, logo_path: null, hero_image_path: null, primary_color: "#0f766e", font_key: "system", sections: {}, published: true, updated_at: new Date().toISOString() }; state.redisCounters.clear(); }
     if (next.ageExchangesMinutes !== undefined) for (const exchange of state.exchanges.values()) exchange.expiresAt -= Number(next.ageExchangesMinutes) * 60_000;
     if (next.seedUnrelatedOutbox) {
       const eventId=randomUUID();
@@ -71,6 +95,35 @@ const server = createServer(async (request, response) => {
     return send(response, 200, { ok: true });
   }
   if (url.pathname === "/__e2e/stats") return send(response, 200, { appointments: state.appointments.size, requestKeys: state.requests.size, outboxDispatches: state.outboxDispatches, exchanges: { ready: [...state.exchanges.values()].filter(x => !x.consumedAt && x.expiresAt > Date.now()).length, used: [...state.exchanges.values()].filter(x => x.consumedAt).length }, outbox: state.outbox.map(job => ({ state: job.state, attempts: job.attempts, last_error: job.last_error })), receipts: state.receipts.length });
+  if (url.pathname === "/__e2e/appearance") return send(response, 200, { settings: state.websiteSettings, objectPaths: [...state.storageObjects.keys()] });
+  if (url.pathname.startsWith("/storage/v1/object/")) {
+    const remainder = url.pathname.slice("/storage/v1/object/".length).split("/");
+    const bucket = decodeURIComponent(remainder.shift() ?? "");
+    const objectPath = decodeURIComponent(remainder.join("/"));
+    if (bucket === "public" && request.method === "GET") {
+      const [publicBucket, ...publicSegments] = objectPath.split("/");
+      const bytes = publicBucket === "catalog-images" ? state.storageObjects.get(publicSegments.join("/")) : null;
+      if (!bytes) { response.writeHead(404); return response.end(); }
+      response.writeHead(200, { "Content-Type": "image/webp", "Cache-Control": "public, max-age=60" }); return response.end(bytes);
+    }
+    const user = tokenUser(request);
+    if (!user?.roles.some(role => role === "OWNER" || role === "ADMIN") || user.aal !== "aal2") return send(response, 403, { message: "Admin with MFA required" });
+    if (bucket !== "catalog-images") return send(response, 404, { message: "Unknown storage bucket" });
+    if (request.method === "POST") {
+      const path = objectPath;
+      if (state.failStorageUploads) return send(response, 500, { message: "test upload failure" });
+      if (!/^appearance\/(logo|hero)\/[0-9a-f-]{36}\.webp$/.test(path) || request.headers["content-type"] !== "image/webp") return send(response, 403, { message: "Storage policy denied this path" });
+      if (state.storageObjects.has(path)) return send(response, 409, { message: "Object already exists" });
+      state.storageObjects.set(path, await rawBody(request));
+      return send(response, 200, { Key: `${bucket}/${path}` });
+    }
+    if (request.method === "DELETE" && !objectPath) {
+      const { prefixes = [] } = await body(request);
+      for (const path of prefixes) state.storageObjects.delete(path);
+      return send(response, 200, prefixes.map(name => ({ name })));
+    }
+    return send(response, 404, { message: "Unsupported storage operation" });
+  }
   if (url.pathname === "/auth/v1/token" && url.searchParams.get("grant_type") === "password") {
     const credentials = await body(request);
     const user=users.find(user=>user.email===credentials.email&&user.password===credentials.password);
@@ -90,6 +143,11 @@ const server = createServer(async (request, response) => {
   }
   if (url.pathname.startsWith("/rest/v1/rpc/")) {
     const name = url.pathname.split("/").at(-1), args = await body(request);
+    if (name === "admin_customer_directory") {
+      const user = tokenUser(request);
+      if (!user?.roles.some(role => role === "OWNER" || role === "ADMIN")) return send(response, 403, { message: "Admin access required" });
+      return send(response, 200, { customers: [], total: 0, page: Number(args.p_page) || 1, timezone: business.timezone });
+    }
     if (name === "claim_notification_outbox" || name === "claim_notification_outbox_by_key") {
       state.outboxDispatches += 1;
       if (state.failOutboxClaim) return send(response, 503, { message: "test outbox failure" });
@@ -133,10 +191,15 @@ const server = createServer(async (request, response) => {
     }
     if (name === "registration_enabled") return send(response, 200, state.registration);
     if (name === "get_access_context") { const user=tokenUser(request); return send(response, 200, { profileActive: true, roles: user?.roles??[], staffActive: user?.id===staffUserId }); }
-    if (name === "public_website_data") return send(response, 200, { business: { ...business, guest_booking_enabled: state.guest, customer_registration_enabled: state.registration, booking_approval_mode: state.approvalMode }, website: null, services: [service], staff: [staff], assignments: [{ service_id: serviceId, staff_id: staffId }], categories: [], hours: [{ weekday: 0, opens_at: "00:00:00", closes_at: "23:59:00" }, { weekday: 1, opens_at: "00:00:00", closes_at: "23:59:00" }, { weekday: 2, opens_at: "00:00:00", closes_at: "23:59:00" }, { weekday: 3, opens_at: "00:00:00", closes_at: "23:59:00" }, { weekday: 4, opens_at: "00:00:00", closes_at: "23:59:00" }, { weekday: 5, opens_at: "00:00:00", closes_at: "23:59:00" }, { weekday: 6, opens_at: "00:00:00", closes_at: "23:59:00" }], announcements: [], policy });
+    if (name === "public_website_data") return send(response, 200, { business: { ...business, guest_booking_enabled: state.guest, customer_registration_enabled: state.registration, booking_approval_mode: state.approvalMode }, website: state.websiteSettings.published ? state.websiteSettings : null, services: [service], staff: [staff], assignments: [{ service_id: serviceId, staff_id: staffId }], categories: [], hours: [{ weekday: 0, opens_at: "00:00:00", closes_at: "23:59:00" }, { weekday: 1, opens_at: "00:00:00", closes_at: "23:59:00" }, { weekday: 2, opens_at: "00:00:00", closes_at: "23:59:00" }, { weekday: 3, opens_at: "00:00:00", closes_at: "23:59:00" }, { weekday: 4, opens_at: "00:00:00", closes_at: "23:59:00" }, { weekday: 5, opens_at: "00:00:00", closes_at: "23:59:00" }, { weekday: 6, opens_at: "00:00:00", closes_at: "23:59:00" }], announcements: [], policy });
     if (name === "server_availability_for_date") {
       if (state.availability === "error") return send(response, 503, { message: "test error" });
       const date = String(args.p_date), slots = state.availability === "empty" || (!args.p_auth_user && !state.guest) ? [] : ["10:00", "11:00", "12:00"].filter(time=>!([...state.appointments.values()].some(a=>a.starts_at===`${date}T${time}:00.000Z`&&["CONFIRMED","AWAITING_PAYMENT"].includes(a.state)))).map(time => ({ starts_at: `${date}T${time}:00.000Z`, ends_at: `${date}T${time}:45.000Z`, local_time: time, staff_ids: [staffId], assigned_staff_id: staffId, staff: [{ id: staffId, display_name: staff.display_name }] }));
+      return send(response, 200, { date, timezone: "UTC", service: { id: serviceId, name: service.name, duration_minutes: service.duration_minutes, buffer_before_minutes: 0, buffer_after_minutes: 0 }, scheduling_interval_minutes: 30, slots });
+    }
+    if (name === "server_home_service_availability_for_date") {
+      if (state.availability === "error") return send(response, 503, { message: "test error" });
+      const date = String(args.p_date), slots = state.availability === "empty" ? [] : ["10:00", "11:00", "12:00"].filter(time=>!([...state.appointments.values()].some(a=>a.starts_at===`${date}T${time}:00.000Z`&&["CONFIRMED","AWAITING_PAYMENT"].includes(a.state)))).map(time => ({ starts_at: `${date}T${time}:00.000Z`, ends_at: `${date}T${time}:45.000Z`, local_time: time, staff_ids: [staffId], assigned_staff_id: staffId, staff: [{ id: staffId, display_name: staff.display_name }] }));
       return send(response, 200, { date, timezone: "UTC", service: { id: serviceId, name: service.name, duration_minutes: service.duration_minutes, buffer_before_minutes: 0, buffer_after_minutes: 0 }, scheduling_interval_minutes: 30, slots });
     }
     if (name === "server_public_booking_submit") {
@@ -149,6 +212,17 @@ const server = createServer(async (request, response) => {
       const eventId = randomUUID(); state.events.set(eventId, { id: eventId, appointment_id: id, to_state: appointment.state, reason: null }); addOutbox(appointment, "APPOINTMENT_STATE_CHANGED", eventId);
       if (token) state.tokens.set(`${createHash("sha256").update(token).digest("hex")}:${id}`, { appointment, token });
       return send(response, 200, { appointment_id: id, guest_token: token });
+    }
+    if (name === "server_home_service_booking_submit") {
+      if (args.p_auth_user !== customerId) return send(response, 400, { message: "Registered customer required for Home Service." });
+      const key = args.p_request_key;
+      if (state.requests.has(key)) return send(response, 200, { appointment_id: state.requests.get(key), guest_token: null });
+      if (state.availability === "empty") return send(response, 400, { message: "This time is no longer available" });
+      const id = randomUUID(), appointment = { id, public_reference:`BK-${randomBytes(8).toString("hex").toUpperCase()}`, state: "PENDING", starts_at: args.p_start, ends_at: new Date(new Date(args.p_start).getTime() + 45 * 60_000).toISOString(), currency: "PHP", total_amount: service.price_amount + service.home_service_fee, payment_mode_snapshot: service.payment_mode, required_payment_amount: service.deposit_amount, payment_due_at: null, customer_id: customerId, customer_name: args.p_name, customer_email: args.p_email, staff_id: args.p_staff ?? staffId, created_at: new Date().toISOString(), fulfillment_mode: "HOME_SERVICE", home_service_fee_snapshot: service.home_service_fee, home_travel_before_snapshot: 20, home_travel_after_snapshot: 20, service_area_hint: args.p_area_hint };
+      appointment.home_location = { appointment_id: id, address: args.p_address, latitude: args.p_latitude, longitude: args.p_longitude, landmark: args.p_landmark, instructions: args.p_instructions };
+      state.requests.set(key, id); state.appointments.set(id, appointment);
+      const eventId = randomUUID(); state.events.set(eventId, { id: eventId, appointment_id: id, to_state: appointment.state, reason: null }); addOutbox(appointment, "APPOINTMENT_STATE_CHANGED", eventId);
+      return send(response, 200, { appointment_id: id, guest_token: null });
     }
     if (name === "guest_appointment_by_token") {
       const found = state.tokens.get(`${args.p_token_hash}:${args.p_appointment}`);
@@ -172,15 +246,22 @@ const server = createServer(async (request, response) => {
       return send(response, 200, { appointment_id: exchange.appointmentId, guest_token: token });
     }
     if(name==="admin_data") {
-      if(!tokenUser(request)?.roles.includes("OWNER"))return send(response,403,{message:"Not authorized"});
+      if(!tokenUser(request)?.roles.some(role=>role==="OWNER"||role==="ADMIN"))return send(response,403,{message:"Not authorized"});
       const rows=[...state.appointments.values()].map(a=>({...a,customer_name:a.customer_name,staff_name:staff.display_name,service_name:service.name,collected_amount:"0"}));
       const selected=args.p_section==="appointment"?rows.filter(a=>a.id===args.p_id):rows.filter(a=>!args.p_status||a.state===args.p_status);
       return send(response,200,{business:{...business,booking_approval_mode:state.approvalMode},date:new Date().toISOString().slice(0,10),page:1,total:selected.length,appointments:selected,pending:rows.filter(a=>a.state==="PENDING"),hours:[],payments:[],events:[...state.events.values()].filter(e=>e.appointment_id===args.p_id),stats:{today:rows.filter(a=>["AWAITING_PAYMENT","CONFIRMED","CHECKED_IN","IN_PROGRESS"].includes(a.state)).length,pending:rows.filter(a=>a.state==="PENDING").length,payment_expired:rows.filter(a=>a.state==="PAYMENT_EXPIRED").length,confirmed:rows.filter(a=>a.state==="CONFIRMED").length,completed:0,no_show:0,upcoming:rows.filter(a=>["AWAITING_PAYMENT","CONFIRMED","CHECKED_IN","IN_PROGRESS"].includes(a.state)).length}});
     }
     if(name==="catalog_data") {
-      if(!tokenUser(request)?.roles.includes("OWNER"))return send(response,403,{message:"Not authorized"});
+      if(!tokenUser(request)?.roles.some(role=>role==="OWNER"||role==="ADMIN"))return send(response,403,{message:"Not authorized"});
       const isService=args.p_kind==="services";
       return send(response,200,{business,categories:[],services:isService?[{...service,active:true,published:true}]:[],staff:isService?[]:[{...staff,active:true,published:true,bookable:true}],service_options:[],staff_options:[],assignments:[],hours:[],exceptions:[],upcoming:[],page:1,total:1});
+    }
+    if(name==="admin_save_home_area") {
+      if(!tokenUser(request)?.roles.some(role=>role==="OWNER"||role==="ADMIN"))return send(response,403,{message:"Not authorized"});
+      business.service_origin_latitude=args.p_latitude==null?null:Number(args.p_latitude);
+      business.service_origin_longitude=args.p_longitude==null?null:Number(args.p_longitude);
+      business.home_service_max_radius_km=args.p_radius_km==null?null:Number(args.p_radius_km);
+      return send(response,200,true);
     }
     if(name==="manage_owner_admins") {
       if(!tokenUser(request)?.roles.includes("OWNER"))return send(response,403,{message:"Not authorized"});
@@ -215,6 +296,22 @@ const server = createServer(async (request, response) => {
   }
   if (url.pathname.startsWith("/rest/v1/")) {
     const table = url.pathname.split("/").at(-1), idFilter = url.searchParams.get("id"), id = idFilter?.replace(/^eq\./, ""), appointmentFilter=url.searchParams.get("appointment_id"), customerFilter=url.searchParams.get("customer_id"), auth = request.headers.authorization?.split(" ")[1] ?? "";
+    if (table === "website_settings") {
+      const actor = tokenUser(request);
+      if (!actor?.roles.some(role => role === "OWNER" || role === "ADMIN") || actor.aal !== "aal2") return send(response, 403, { message: "Admin with MFA required" });
+      if (request.method === "GET") return send(response, 200, [state.websiteSettings]);
+      if (request.method === "POST") {
+        const values = await body(request); state.websiteSettings = { ...state.websiteSettings, ...values, updated_at: new Date().toISOString() };
+        return send(response, 200, [{ id: state.websiteSettings.id }]);
+      }
+      if (request.method === "PATCH") {
+        const expectedId = url.searchParams.get("id")?.replace(/^eq\./, ""), expectedAt = url.searchParams.get("updated_at")?.replace(/^eq\./, "");
+        if (expectedId !== state.websiteSettings.id || (expectedAt && expectedAt !== state.websiteSettings.updated_at)) return send(response, 200, []);
+        const values = await body(request); state.websiteSettings = { ...state.websiteSettings, ...values, updated_at: new Date().toISOString() };
+        return send(response, 200, [{ id: state.websiteSettings.id }]);
+      }
+      return send(response, 405, { message: "Unsupported website settings operation" });
+    }
     const filterMatches=(filter,value)=>filter===`eq.${value}`||filter===`in.(${value})`||filter?.startsWith("in.(")&&filter.slice(4,-1).split(",").includes(value);
     let signedInCustomer=null;try{const sub=JSON.parse(Buffer.from(auth.split(".")[1]??"","base64url").toString()).sub;signedInCustomer=[customerId,otherCustomerId].includes(sub)?sub:null}catch{}
     let rows = [];
@@ -222,6 +319,7 @@ const server = createServer(async (request, response) => {
       const appointment = id ? currentAppointment(id) : signedInCustomer && filterMatches(customerFilter,signedInCustomer) ? [...state.appointments.values()].find(x => x.customer_id === signedInCustomer) : null;
       if (appointment && ((signedInCustomer && appointment.customer_id === signedInCustomer) || request.headers.apikey === "e2e-test-server-only-secret")) rows = [appointment];
     } else if (table === "appointment_items") {const appointment=[...state.appointments.values()].find(x=>filterMatches(appointmentFilter,x.id));if(appointment)rows=[{appointment_id:appointment.id,service_name_snapshot:service.name,duration_minutes:service.duration_minutes}]}
+    else if (table === "appointment_home_locations") {const appointment=[...state.appointments.values()].find(x=>filterMatches(appointmentFilter,x.id));const currentUser=tokenUser(request);if(appointment?.home_location&&(signedInCustomer===appointment.customer_id||currentUser?.roles.includes("OWNER")||currentUser?.roles.includes("ADMIN")||request.headers.apikey === "e2e-test-server-only-secret"))rows=[appointment.home_location]}
     else if (table === "staff" && filterMatches(idFilter,staffId)) rows = [{ id: staffId, display_name: staff.display_name, auth_user_id: staffUserId, active: true }];
     else if (table === "customers") { const appointment=[...state.appointments.values()].find(x=>filterMatches(idFilter,x.customer_id)); if(appointment && request.headers.apikey === "e2e-test-server-only-secret") rows=[{ id: appointment.customer_id, display_name: appointment.customer_name, email: appointment.customer_email, auth_user_id: appointment.customer_id===customerId?customerId:null, phone: null }]; else if(signedInCustomer) rows = [{ id: signedInCustomer, display_name: signedInCustomer===customerId?"E2E Customer":"Other E2E Customer", email: signedInCustomer===customerId?customerEmail:"other-customer@example.test", phone: null, auth_user_id: signedInCustomer }]; }
     else if (table === "business_settings") rows = [{ name: business.name, timezone: "UTC",booking_approval_mode:state.approvalMode }];

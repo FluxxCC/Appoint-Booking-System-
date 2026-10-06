@@ -1,4 +1,4 @@
-import { expect, test, type Page, type APIRequestContext, type Browser } from "@playwright/test";
+import { expect, test, type Page, type APIRequestContext, type Browser } from "./fixtures";
 
 const stub = "http://127.0.0.1:54322";
 function futureDate() { const date = new Date(); date.setUTCDate(date.getUTCDate() + 4); return date.toISOString().slice(0, 10); }
@@ -20,17 +20,17 @@ async function bookAsGuest(page: Page) {
   await Promise.all([page.waitForURL(/\/book\/confirmation\?id=/),page.locator('button[type="submit"]').evaluate(button=>(button as HTMLButtonElement).click())]);
   return new URL(page.url()).searchParams.get("id")!;
 }
-async function login(page: Page, email: string, password: string) {
-  await page.goto("/login");
-  await page.getByLabel("Email address").fill(email);
+async function login(page: Page, email: string, password: string, portal: "/owner/login" | "/staff/login") {
+  await page.goto(portal);
+  await page.getByLabel("Account email").fill(email);
   await page.locator('input[name="password"]').fill(password);
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page).not.toHaveURL(/\/login/, { timeout: 15_000 });
 }
-async function actorPage(browser: Browser, email: string, password: string) {
+async function actorPage(browser: Browser, email: string, password: string, portal: "/owner/login" | "/staff/login") {
   const context = await browser.newContext();
   const page = await context.newPage();
-  await login(page, email, password);
+  await login(page, email, password, portal);
   return { page, context };
 }
 
@@ -38,11 +38,11 @@ test("guest checkout fetch sends only the appointment ID and navigates to the va
   await scenario(request, "ADMIN_APPROVAL");
   const id=await bookAsGuest(page);
   await expect(page.getByRole("heading",{name:"Booking request submitted"})).toBeVisible();
-  const owner=await actorPage(browser,"owner@example.test","e2e-owner-passphrase");
+  const owner=await actorPage(browser,"owner@example.test","e2e-owner-passphrase","/owner/login");
   await owner.page.goto("/admin/appointments?status=PENDING");
   await expect(owner.page.getByText("Phase Eight Guest").first()).toBeVisible();
-  await owner.page.getByRole("button",{name:"Accept",exact:true}).first().click();
-  await expect(owner.page.getByText("No pending requests.")).toBeVisible();
+  await owner.page.getByRole("button",{name:"Accept request",exact:true}).first().click();
+  await expect(owner.page.getByText("No requests are waiting for review.")).toBeVisible();
   await page.goto(`/booking/manage?id=${id}`);
   await expect(page.getByRole("heading",{name:"Payment required"})).toBeVisible();
   await expect(page.getByText(/Pay by .* to keep this time reserved/i)).toBeVisible();
@@ -69,11 +69,12 @@ test("guest checkout fetch sends only the appointment ID and navigates to the va
 test("owner declines a pending request and guest sees declined status", async ({ page, browser, request }) => {
   await scenario(request, "ADMIN_APPROVAL");
   const id=await bookAsGuest(page);
-  const owner=await actorPage(browser,"owner@example.test","e2e-owner-passphrase");
+  const owner=await actorPage(browser,"owner@example.test","e2e-owner-passphrase","/owner/login");
   await owner.page.goto("/admin/appointments?status=PENDING");
-  await owner.page.getByLabel("Reason for declining").first().fill("The professional is unavailable");
   await owner.page.getByRole("button",{name:"Decline",exact:true}).first().click();
-  await expect(owner.page.getByText("No pending requests.")).toBeVisible();
+  await owner.page.getByLabel("Reason for declining").first().fill("The professional is unavailable");
+  await owner.page.getByRole("button",{name:"Confirm decline",exact:true}).first().click();
+  await expect(owner.page.getByText("No requests are waiting for review.")).toBeVisible();
   await page.goto(`/booking/manage?id=${id}`);
   await expect(page.getByText("Declined",{exact:true})).toBeVisible();
   await owner.context.close();
@@ -82,7 +83,7 @@ test("owner declines a pending request and guest sees declined status", async ({
 test("assigned staff approves in staff mode", async ({ page, browser, request }) => {
   await scenario(request, "STAFF_APPROVAL");
   const id=await bookAsGuest(page);
-  const staff=await actorPage(browser,"staff@example.test","e2e-staff-passphrase");
+  const staff=await actorPage(browser,"staff@example.test","e2e-staff-passphrase","/staff/login");
   await staff.page.goto("/staff");
   await expect(staff.page.getByText("Your pending requests")).toBeVisible();
   await staff.page.getByRole("button",{name:"Accept request"}).click();
@@ -110,7 +111,7 @@ test("expired payment is visible to owner and guest without another checkout", a
   await page.goto(`/booking/manage?id=${id}`);
   await expect(page.getByText("Payment window expired; time released")).toBeVisible();
   await expect(page.getByRole("button", { name: "Pay online" })).toHaveCount(0);
-  const owner = await actorPage(browser, "owner@example.test", "e2e-owner-passphrase");
+  const owner = await actorPage(browser, "owner@example.test", "e2e-owner-passphrase", "/owner/login");
   await owner.page.goto("/admin/appointments?status=PAYMENT_EXPIRED");
   await expect(owner.page.getByRole("table").getByText("Payment Expired")).toBeVisible();
   await owner.page.goto(`/admin/appointments/${id}`);
