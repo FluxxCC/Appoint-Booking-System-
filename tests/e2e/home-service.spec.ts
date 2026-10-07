@@ -23,7 +23,7 @@ test("registered customer can request Home Service with reviewed location and fe
   await page.getByRole("button", { name: "Continue" }).click();
   await page.getByLabel("Appointment date").fill(futureDate());
   await page.getByRole("button", { name: "Continue" }).click();
-  await page.getByRole("button", { name: "10:00" }).click();
+  await page.getByRole("button", { name: "10:00 AM" }).click();
   await page.getByRole("button", { name: "Continue" }).click();
 
   await page.locator("#home-address").fill("12 Test Street, Demo Barangay");
@@ -114,7 +114,7 @@ test("guest cannot continue through Home Service without an authenticated custom
   await page.getByRole("button", { name: "Continue" }).click();
   await page.getByLabel("Appointment date").fill(futureDate());
   await page.getByRole("button", { name: "Continue" }).click();
-  await page.getByRole("button", { name: "10:00" }).click();
+  await page.getByRole("button", { name: "10:00 AM" }).click();
   await page.getByRole("button", { name: "Continue" }).click();
   await expect(page.getByText("Home Service requires an account")).toBeVisible();
   await page.locator("#home-address").fill("12 Test Street, Demo Barangay");

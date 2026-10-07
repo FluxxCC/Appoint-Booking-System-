@@ -14,7 +14,7 @@ async function book(page: Page, email = "guest-e2e@example.test") {
   await page.getByRole("button", { name: "Continue" }).click();
   await page.getByLabel("Appointment date").fill(futureDate());
   await page.getByRole("button", { name: "Continue" }).click();
-  await page.getByRole("button", { name: "10:00" }).click();
+  await page.getByRole("button", { name: "10:00 AM" }).click();
   await page.getByRole("button", { name: "Continue" }).click();
   await page.getByLabel("Full name").fill("Guest E2E Customer");
   const emailField = page.getByLabel("Email address");
@@ -286,7 +286,7 @@ test("signed-in booking explains identity, locks verified email, and sign-out re
   await page.getByRole("button", { name: "Continue" }).click();
   await page.getByLabel("Appointment date").fill(futureDate());
   await page.getByRole("button", { name: "Continue" }).click();
-  await page.getByRole("button", { name: "10:00" }).click();
+  await page.getByRole("button", { name: "10:00 AM" }).click();
   await page.getByRole("button", { name: "Continue" }).click();
   await expect(page.getByText("Booking as")).toBeVisible();
   await expect(page.getByText("customer@example.test").first()).toBeVisible();

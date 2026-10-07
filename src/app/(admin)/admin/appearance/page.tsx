@@ -1,5 +1,6 @@
 import { requireArea } from "@/lib/auth/access.server";
 import { AppearanceForm } from "@/features/admin/appearance-form";
+import { aboutCopy } from "@/features/public-site/about-content";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +21,7 @@ export default async function AppearancePage() {
     hero_image_path: settings?.hero_image_path ?? null,
     primary_color: settings?.primary_color ?? "#0f766e",
     font_key: settings?.font_key ?? "system",
-    about: typeof sections.about === "string" ? sections.about : "",
+    about: aboutCopy(sections.about),
     published: settings?.published ?? true,
     updated_at: settings?.updated_at ?? "",
     business_name: business?.name ?? "Your business",

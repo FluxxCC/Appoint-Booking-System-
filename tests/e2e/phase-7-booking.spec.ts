@@ -38,7 +38,7 @@ async function reachTimeStep(page: Page, browseCatalog = false) {
 }
 
 async function completeGuestRequest(page: Page, registeredCustomer = false) {
-  await page.getByRole("button", { name: "10:00" }).click();
+  await page.getByRole("button", { name: "10:00 AM" }).click();
   await page.getByRole("button", { name: "Continue" }).click();
   await page.getByLabel("Full name").fill("Guest E2E Customer");
   const email = page.getByLabel("Email address");
@@ -96,7 +96,7 @@ test("guest retries reuse the request key and do not create another appointment"
   await page.getByRole("button", { name: "Continue" }).click();
   await page.getByLabel("Appointment date").fill(futureDate());
   await page.getByRole("button", { name: "Continue" }).click();
-  await page.getByRole("button", { name: "10:00" }).click();
+  await page.getByRole("button", { name: "10:00 AM" }).click();
   await page.getByRole("button", { name: "Continue" }).click();
   await page.getByLabel("Full name").fill("Guest E2E Customer");
   await page.getByLabel("Email address").fill("guest-e2e@example.test");
@@ -195,14 +195,14 @@ test("guest and registration settings and availability empty/error states have c
 
 test("changing date clears a previously selected slot and contact validation is field-specific", async ({ page }) => {
   await reachTimeStep(page);
-  await page.getByRole("button", { name: "10:00" }).click();
+  await page.getByRole("button", { name: "10:00 AM" }).click();
   await page.getByRole("button", { name: "Continue" }).click();
   await page.getByRole("button", { name: "Back" }).click();
   await page.getByRole("button", { name: "Back" }).click();
   await page.getByLabel("Appointment date").fill(futureDate(4));
   await page.getByRole("button", { name: "Continue" }).click();
-  await expect(page.getByRole("button", { name: "10:00" })).toHaveAttribute("aria-pressed", "false");
-  await page.getByRole("button", { name: "10:00" }).click();
+  await expect(page.getByRole("button", { name: "10:00 AM" })).toHaveAttribute("aria-pressed", "false");
+  await page.getByRole("button", { name: "10:00 AM" }).click();
   await page.getByRole("button", { name: "Continue" }).click();
   await page.getByRole("button", { name: "Continue" }).click();
   await page.getByRole("button", { name: "Continue" }).click();

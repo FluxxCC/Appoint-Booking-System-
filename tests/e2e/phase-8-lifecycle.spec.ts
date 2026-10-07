@@ -12,7 +12,7 @@ async function bookAsGuest(page: Page) {
   await page.getByRole("button", { name: "Continue" }).click();
   await page.getByLabel("Appointment date").fill(futureDate());
   await page.getByRole("button", { name: "Continue" }).click();
-  await page.getByRole("button", { name: "10:00" }).click();
+  await page.getByRole("button", { name: "10:00 AM" }).click();
   await page.getByRole("button", { name: "Continue" }).click();
   await page.getByLabel("Full name").fill("Phase Eight Guest");
   await page.getByLabel("Email address").fill("phase8@example.test");
