@@ -8,6 +8,7 @@ export const metadata: Metadata = {
   title: "Usteng Barber Shop",
   description: "Book your next appointment at Usteng Barber Shop.",
   openGraph: {
+    url: "https://usteng.zentra.surf/",
     type: "website",
     locale: "en_PH",
     siteName: "Usteng Barber Shop",
