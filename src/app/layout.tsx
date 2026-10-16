@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 import "./globals.css";
 
+const socialImage = "https://usteng.zentra.surf/images/usteng-social-share.png";
+
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "https://appointmentdemo.zentra.surf"),
+  metadataBase: new URL("https://usteng.zentra.surf"),
   title: "Usteng Barber Shop",
   description: "Book your next appointment at Usteng Barber Shop.",
   openGraph: {
@@ -11,13 +13,13 @@ export const metadata: Metadata = {
     siteName: "Usteng Barber Shop",
     title: "Usteng Barber Shop",
     description: "Book your next appointment at Usteng Barber Shop.",
-    images: [{ url: "/images/usteng-social-share.png", width: 1200, height: 630, alt: "Usteng Barber Shop" }],
+    images: [{ url: socialImage, secureUrl: socialImage, type: "image/png", width: 1200, height: 630, alt: "Usteng Barber Shop" }],
   },
   twitter: {
     card: "summary_large_image",
     title: "Usteng Barber Shop",
     description: "Book your next appointment at Usteng Barber Shop.",
-    images: [{ url: "/images/usteng-social-share.png", alt: "Usteng Barber Shop" }],
+    images: [{ url: socialImage, secureUrl: socialImage, type: "image/png", width: 1200, height: 630, alt: "Usteng Barber Shop" }],
   },
 };
 
