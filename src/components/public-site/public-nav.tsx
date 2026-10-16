@@ -14,21 +14,11 @@ const links = [
   { label: "Our team", href: "/team", icon: "team" as const },
   { label: "About", href: "/about", icon: "profile" as const },
   { label: "Contact", href: "/contact", icon: "profile" as const },
-  { label: "Manage booking", href: "/booking/manage", icon: "appointments" as const },
 ];
 
 function AccountLinks({ principal, close, compact = false }: { principal: Principal | null; close?: () => void; compact?: boolean }) {
   if (!principal) return <>
     <Link href="/login" onClick={close} className={compact ? "rounded-lg px-3 py-2 text-sm font-semibold text-accent-dark hover:bg-accent-soft" : "button-secondary min-h-11 w-full"}>Sign in</Link>
-    <Link href="/register" onClick={close} className={compact ? "hidden whitespace-nowrap rounded-lg px-3 py-2 text-sm font-semibold text-muted hover:bg-canvas hover:text-ink xl:inline" : "mt-2 block rounded-xl px-3 py-2 text-center text-sm font-semibold text-accent-dark hover:bg-accent-soft"}>Create customer account</Link>
-    <details className={compact ? "relative" : "mt-3 rounded-xl border border-line px-3 py-2"}>
-      <summary className={compact ? "cursor-pointer whitespace-nowrap rounded-lg px-3 py-2 text-sm font-semibold text-muted hover:bg-canvas" : "cursor-pointer text-center text-sm font-semibold text-accent-dark"}>Work sign in</summary>
-      <div className={compact ? "absolute right-0 top-full z-50 mt-2 grid min-w-44 gap-1 rounded-xl border border-line bg-white p-2 shadow-xl" : "mt-3 grid gap-1 border-t border-line pt-2"}>
-        <Link href="/owner/login" onClick={close} className="rounded-lg px-3 py-2 text-sm text-ink hover:bg-canvas">Owner</Link>
-        <Link href="/admin/login" onClick={close} className="rounded-lg px-3 py-2 text-sm text-ink hover:bg-canvas">Administrator</Link>
-        <Link href="/staff/login" onClick={close} className="rounded-lg px-3 py-2 text-sm text-ink hover:bg-canvas">Staff</Link>
-      </div>
-    </details>
   </>;
 
   const accountHref = principal.roles.some(role => role === "OWNER" || role === "ADMIN") ? "/admin" : principal.roles.includes("STAFF") ? "/staff" : "/account";
