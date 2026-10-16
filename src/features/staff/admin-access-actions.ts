@@ -3,7 +3,6 @@
 import { revalidatePath } from "next/cache";
 import { requireOwner } from "@/lib/auth/access.server";
 import { createPrivilegedClient } from "@/lib/supabase/privileged.server";
-import { siteUrl } from "@/lib/auth/site-url.server";
 import { emailSchema, type FormState } from "@/features/auth/schemas";
 
 
@@ -14,7 +13,7 @@ export async function inviteAdminAction(_state: FormState, form: FormData): Prom
 
   try {
     const { data, error } = await createPrivilegedClient().auth.admin.inviteUserByEmail(parsed.data, {
-      redirectTo: `${siteUrl()}/auth/confirm?portal=admin`,
+      data: { invitation_portal: "admin" },
     });
     if (error || !data.user) return { error: "The invitation could not be sent. Existing accounts can be granted ADMIN after their email is confirmed by entering their Auth user UUID below." };
 

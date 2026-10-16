@@ -4,7 +4,6 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { requireOwner } from "@/lib/auth/access.server";
 import { createPrivilegedClient } from "@/lib/supabase/privileged.server";
-import { siteUrl } from "@/lib/auth/site-url.server";
 import type { FormState } from "@/features/auth/schemas";
 
 const enableSchema = z.object({ staffId: z.uuid(), email: z.email().trim().max(254) });
@@ -17,7 +16,7 @@ export async function inviteStaffLoginAction(_state: FormState, form: FormData):
 
   try {
     const { data, error } = await createPrivilegedClient().auth.admin.inviteUserByEmail(parsed.data.email, {
-      redirectTo: `${siteUrl()}/auth/confirm?portal=staff`,
+      data: { invitation_portal: "staff" },
     });
     if (error || !data.user) {
       return { error: "The invitation could not be sent. If this person already has an account, connect their existing account below." };

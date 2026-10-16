@@ -3,7 +3,6 @@
 import { z } from "zod";
 import { requireOwner } from "@/lib/auth/access.server";
 import { createPrivilegedClient } from "@/lib/supabase/privileged.server";
-import { siteUrl } from "@/lib/auth/site-url.server";
 import { invitationSchema, validationState, type FormState } from "@/features/auth/schemas";
 
 export async function inviteStaffAction(_previous: FormState, form: FormData): Promise<FormState> {
@@ -12,7 +11,7 @@ export async function inviteStaffAction(_previous: FormState, form: FormData): P
   if (!parsed.success) return validationState(parsed.error);
   try {
     const { data, error } = await createPrivilegedClient().auth.admin.inviteUserByEmail(parsed.data.email, {
-      redirectTo: `${siteUrl()}/auth/confirm?portal=staff`, data: { full_name: parsed.data.fullName },
+      data: { full_name: parsed.data.fullName, invitation_portal: "staff" },
     });
     if (error || !data.user) return { error: "The invitation could not be sent. Check the address and email configuration. For an existing account, use the controlled linking form below." };
     // Rechecks live owner/MFA authorization in the DB after the external Auth call.
