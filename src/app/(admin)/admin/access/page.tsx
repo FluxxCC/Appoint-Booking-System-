@@ -4,6 +4,6 @@ import { AdminAccessPanel } from "@/features/staff/admin-access-panel";
 
 export default async function AdminAccessPage() {
   await requireOwner();
-  const accounts = await readOwnerAdminAccounts();
-  return <AdminAccessPanel accounts={accounts} />;
+  const access = await readOwnerAdminAccounts();
+  return <AdminAccessPanel {...access} />;
 }

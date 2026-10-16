@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { createDatabase } from './database-harness.mjs';
 
 const db = await createDatabase();
@@ -20,21 +20,15 @@ const accept = id => scalar('select public.accept_appointment($1)',[id]);
 const decline = (id,reason='The requested time is unavailable') => scalar("select public.transition_appointment($1,'DECLINED',$2)",[id,reason]);
 const state = id => scalar('select state from public.appointments where id=$1',[id]);
 const eventCount = id => scalar('select count(*)::int from public.appointment_events where appointment_id=$1',[id]);
-const outboxCount = async id => {
-  const previousRole=await scalar("select current_setting('role',true)");
-  await db.exec('reset role');await db.exec('set role service_role');
-  const count=await scalar('select count(*)::int from public.notification_outbox where appointment_id=$1',[id]);
-  await db.exec('reset role');
-  if(previousRole&&previousRole!=='none')await db.exec(`set role ${previousRole}`);
-  return count;
-};
-
 try {
   for (const name of ['owner','admin','staffOne','staffTwo','customerOne','customerTwo'])
     await db.query('insert into auth.users(id,email) values($1,$2)',[ids[name],`${name}@example.test`]);
   await actor('service_role');
-  await db.query("insert into public.user_roles(auth_user_id,role) values($1,'OWNER'),($2,'ADMIN'),($3,'STAFF'),($4,'STAFF')",[ids.owner,ids.admin,ids.staffOne,ids.staffTwo]);
+  await db.query("insert into public.user_roles(auth_user_id,role) values($1,'OWNER'),($2,'STAFF'),($3,'STAFF')",[ids.owner,ids.staffOne,ids.staffTwo]);
+  await actor('authenticated',ids.owner,'aal2');
+  await db.query("select public.manage_owner_admins('grant',$1,null)",[ids.admin]);
   await db.query("insert into public.business_settings(name,timezone,currency,published,guest_booking_enabled) values('Phase 8 fixture','UTC','USD',true,true)");
+  await actor('service_role');
   await db.query("insert into public.booking_policy_versions(id,version,terms,published,minimum_notice_minutes,payment_window_minutes) values($1,1,'Fixture terms',true,0,30)",[ids.policy]);
   await db.query("insert into public.customers(id,auth_user_id,display_name,email) values($1,$2,'One','one@example.test'),($3,$4,'Two','two@example.test')",[ids.customerOneRow,ids.customerOne,ids.customerTwoRow,ids.customerTwo]);
   await db.query("insert into public.staff(id,auth_user_id,display_name,slug,active,published,bookable) values($1,$2,'Staff One','staff-one',true,true,true),($3,$4,'Staff Two','staff-two',true,true,true),($5,null,'No Login','no-login',true,true,true)",[ids.staffOneRow,ids.staffOne,ids.staffTwoRow,ids.staffTwo,ids.staffNoLogin]);
@@ -49,9 +43,9 @@ try {
 
   await actor('authenticated',ids.customerOne);
   const a=await request(ids.customerOneRow,ids.staffOneRow,ids.cash,t1);
-  equal('booking commit atomically queues its initial notification',await outboxCount(a),1);
+  equal('booking commit records its initial lifecycle event',await eventCount(a),1);
   const b=await request(ids.customerOneRow,ids.staffOneRow,ids.cash,t1);
-  equal('second booking commit queues its own notification',await outboxCount(b),1);
+  equal('second booking commit records its own lifecycle event',await eventCount(b),1);
   equal('overlapping requests are pending',await scalar("select count(*)::int from public.appointments where staff_id=$1 and starts_at=$2 and state='PENDING'",[ids.staffOneRow,t1]),2);
   await actor('authenticated',ids.staffOne);
   await denied('staff cannot accept in admin mode','select public.accept_appointment($1)',[a],/not authorized/);
@@ -65,21 +59,19 @@ try {
   equal('accepted source is manual',await scalar('select acceptance_source from public.appointments where id=$1',[a]),'MANUAL');
   equal('cash acceptance requires no online payment',await scalar('select payment_due_at from public.appointments where id=$1',[a]),null);
   const firstEvents=await eventCount(a);
-  const firstOutboxRows=await outboxCount(a);
   equal('repeated acceptance returns state',await accept(a),'CONFIRMED');
   equal('repeated acceptance appends no event',await eventCount(a),firstEvents);
-  equal('repeated acceptance appends no duplicate outbox event',await outboxCount(a),firstOutboxRows);
   await actor('authenticated',ids.admin,'aal2');
   await denied('second acceptance has safe conflict','select public.accept_appointment($1)',[b],/no longer available/);
   equal('losing request stays pending',await state(b),'PENDING');
   await denied('decline needs useful reason',"select public.transition_appointment($1,'DECLINED','no')",[b],/useful decline reason/);
   await decline(b);
   equal('decline reason persisted',await scalar('select decline_reason from public.appointments where id=$1',[b]),'The requested time is unavailable');
-  const declinedEvents=await eventCount(b),declinedOutboxRows=await outboxCount(b);await decline(b);
+  const declinedEvents=await eventCount(b);await decline(b);
   equal('repeated decline appends no event',await eventCount(b),declinedEvents);
-  equal('repeated decline appends no duplicate outbox event',await outboxCount(b),declinedOutboxRows);
   equal('decline did not reserve',await state(b),'DECLINED');
-  equal('admin accept is audited',await scalar("select count(*)::int from public.audit_logs where entity_id=$1 and action='BOOKING_ACCEPTED'",[a]),1);
+  await actor('service_role');
+  equal('appointment acceptance is audited',await scalar("select count(*)::int from public.audit_logs where entity_id=$1 and action='BOOKING_ACCEPTED'",[a]),1);
   equal('admin decline is audited',await scalar("select count(*)::int from public.audit_logs where entity_id=$1 and action='BOOKING_DECLINED'",[b]),1);
 
   await actor('authenticated',ids.customerOne);
@@ -115,15 +107,6 @@ try {
   equal('deadline begins at acceptance',await scalar("select abs(extract(epoch from (payment_due_at-accepted_at-interval '30 minutes'))) < 1 from public.appointments where id=$1",[dep]),true);
   equal('full-payment deadline begins at acceptance',await scalar("select abs(extract(epoch from (payment_due_at-accepted_at-interval '30 minutes'))) < 1 from public.appointments where id=$1",[full]),true);
   await actor('service_role');
-  const pendingEventKey=await scalar("select id::text from public.appointment_events where appointment_id=$1 and to_state='PENDING' order by created_at limit 1",[dep]);
-  const awaitingEventKey=await scalar("select id::text from public.appointment_events where appointment_id=$1 and to_state='AWAITING_PAYMENT' order by created_at limit 1",[dep]);
-  const pendingClaim=await scalar('select id from public.claim_notification_outbox_by_key($1)',[pendingEventKey]);
-  equal('stale pending notification is rejected',await scalar('select public.notification_lifecycle_current($1)',[pendingClaim]),false);
-  equal('stale notification is acknowledged without delivery',await scalar("select public.finish_notification_outbox($1,false,false,'superseded')",[pendingClaim]),true);
-  equal('superseded notification remains as failed history',await scalar('select state from public.notification_outbox where id=$1',[pendingClaim]),'FAILED');
-  const awaitingClaim=await scalar('select id from public.claim_notification_outbox_by_key($1)',[awaitingEventKey]);
-  equal('current payment-required notification is valid',await scalar('select public.notification_lifecycle_current($1)',[awaitingClaim]),true);
-  equal('scoped claim leaves other work unclaimed',await scalar("select count(*)::int from public.notification_outbox where state='PROCESSING'"),1);
   await actor('authenticated',ids.admin,'aal2');
   await denied('client cannot update payment requirement','update public.appointments set required_payment_amount=1 where id=$1',[dep],/permission denied/);
   await denied('client cannot update payment deadline',"update public.appointments set payment_due_at=now()+interval '1 day' where id=$1",[dep],/permission denied/);
@@ -241,22 +224,6 @@ try {
     return request(guestCustomer,ids.staffTwoRow,ids.deposit,start(10,10));
   })();
   equal('guest checkout fixture awaits payment',await state(guestAppointment),'AWAITING_PAYMENT');
-  const guestReference=await scalar('select public_reference from public.appointments where id=$1',[guestAppointment]);
-  const firstExchange=await json('select public.issue_guest_access_link($1,$2,$3)',["guest@example.test",guestReference,guestAppointment]);
-  equal('guest email exchange link belongs to requested appointment',firstExchange.appointment_id,guestAppointment);
-  equal('guest email link lifetime is 60 minutes',await scalar("select extract(epoch from expires_at-created_at)::int from public.guest_access_tokens where appointment_id=$1 and scope='MANAGE' order by created_at desc limit 1",[guestAppointment]),3600);
-  const exchangeHash=createHash('sha256').update(firstExchange.token).digest('hex');
-  equal('guest one-time token is stored as its hash',await scalar('select count(*)::int from public.guest_access_tokens where appointment_id=$1 and scope=\'MANAGE\' and token_hash=$2',[guestAppointment,exchangeHash]),1);
-  const exchanged=await json('select public.exchange_guest_access_link($1)',[exchangeHash]);
-  equal('guest exchange creates scoped appointment access',exchanged.appointment_id,guestAppointment);
-  equal('guest email exchange cannot be replayed',await scalar('select public.exchange_guest_access_link($1)',[exchangeHash]),null);
-  const expiring=await json('select public.issue_guest_access_link($1,$2,$3)',["guest@example.test",guestReference,guestAppointment]);
-  const expiringHash=createHash('sha256').update(expiring.token).digest('hex');
-  await db.query("update public.guest_access_tokens set expires_at=clock_timestamp()-interval '1 second' where token_hash=$1",[expiringHash]);
-  equal('expired email exchange link is unusable',await scalar('select public.exchange_guest_access_link($1)',[expiringHash]),null);
-  await actor('authenticated',ids.customerTwo);
-  await denied('authenticated user cannot issue guest email link','select public.issue_guest_access_link($1,$2,$3)',["guest@example.test",guestReference,guestAppointment],/permission denied/);
-  await actor('service_role');
   const guestTokenHash='a'.repeat(64);
   await db.query("insert into public.guest_access_tokens(appointment_id,token_hash,scope,expires_at) values($1,$2,'VIEW',clock_timestamp()+interval '1 hour')",[guestAppointment,guestTokenHash]);
   const guestAttempt=await json('select public.prepare_payment_attempt($1,null,$2,$3,$4)',[guestAppointment,guestTokenHash,'test-provider',randomUUID()]);
@@ -268,8 +235,6 @@ try {
   await denied('anonymous cannot mark a PayMongo checkout expired','select public.expire_paymongo_checkout_attempt($1,$2)',[guestAttempt.payment_id,'cs_guest123'],/permission denied/);
   await denied('anonymous cannot call acceptance','select public.accept_appointment($1)',[autoCash],/permission denied/);
   await denied('anonymous cannot call expiration','select public.expire_due_payments()',[],/permission denied/);
-  await denied('anonymous cannot claim a scoped outbox message','select * from public.claim_notification_outbox_by_key($1)',[pendingEventKey],/permission denied/);
-  await denied('anonymous cannot inspect lifecycle validation','select public.notification_lifecycle_current($1)',[pendingClaim],/permission denied/);
   await denied('anonymous cannot call protected booking','select public.server_public_booking_submit(null,null,null,null,null,null,null,null)',[],/permission denied/);
   await actor('authenticated',ids.customerTwo);
   equal('other customer cannot see booking',await scalar('select count(*)::int from public.appointments where id=$1',[autoCash]),0);

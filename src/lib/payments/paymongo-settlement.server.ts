@@ -1,7 +1,6 @@
 import "server-only";
 import { createPrivilegedClient } from "@/lib/supabase/privileged.server";
 import type { VerifiedProviderPayment } from "./provider";
-import { dispatchNotificationsAfterCommit } from "@/server/email/post-commit.server";
 
 export class PayMongoEventNotMatchedError extends Error {
   constructor() { super("PayMongo event did not match an expected payment."); this.name = "PayMongoEventNotMatchedError"; }
@@ -25,11 +24,5 @@ export async function settlePayMongoPayment(facts: VerifiedProviderPayment) {
     p_paid_at: facts.paidAt,
   });
   if (error || typeof result !== "string") throw new Error("Verified payment could not be recorded.");
-  if (result === "CONFIRMED") {
-    await dispatchNotificationsAfterCommit({ appointmentId: payment.appointment_id, eventState: "CONFIRMED" });
-  } else if (result === "LATE_PAYMENT_REVIEW") {
-    await dispatchNotificationsAfterCommit({ appointmentId: payment.appointment_id, eventState: "PAYMENT_EXPIRED" });
-    await dispatchNotificationsAfterCommit({ outboxKey: `payment-exception:${payment.id}` });
-  }
   return result;
 }

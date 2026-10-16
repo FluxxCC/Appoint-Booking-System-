@@ -4,6 +4,7 @@ import {z} from "zod";
 import {revalidatePath} from "next/cache";
 import {redirect} from "next/navigation";
 import {requireArea} from "@/lib/auth/access.server";
+import {resolveWorkspaceBranchContext} from "@/features/branches/workspace-context.server";
 import type {FormState} from "@/features/auth/schemas";
 import {hoursSchema} from "@/features/admin/schemas";
 import {categorySchema,serviceSchema,serviceValues,staffSchema,exceptionSchema} from "./schemas";
@@ -50,21 +51,21 @@ export async function saveStaff(_s:FormState,f:FormData):Promise<FormState>{
  revalidatePath("/admin","layout");if(!v.data.id)redirect(`/admin/staff/${data}`);return {success:"Staff profile saved. Account roles are unchanged."};
 }
 export async function assignServices(_s:FormState,f:FormData):Promise<FormState>{
- const {supabase}=await requireArea("admin");const v=z.object({staff:z.uuid(),services:z.array(z.uuid()).max(1000)}).safeParse({staff:f.get("staff_id"),services:f.getAll("services")});if(!v.success)return invalid(v.error);
- const {error}=await supabase.rpc("catalog_assign_services",{p_staff:v.data.staff,p_services:[...new Set(v.data.services)]});if(error)return {error:"Assignments could not be saved. Reload and try again."};revalidatePath("/admin","layout");return {success:"Service assignments saved."};
+ const {supabase,branchContext}=await resolveWorkspaceBranchContext("admin");if(!branchContext.selectedBranchId)return {error:"Select a branch before editing service assignments."};const v=z.object({staff:z.uuid(),services:z.array(z.uuid()).max(1000)}).safeParse({staff:f.get("staff_id"),services:f.getAll("services")});if(!v.success)return invalid(v.error);
+ const {error}=await supabase.rpc("catalog_assign_services_for_branch",{p_branch:branchContext.selectedBranchId,p_staff:v.data.staff,p_services:[...new Set(v.data.services)]});if(error)return {error:"Assignments could not be saved. Reload and verify the staff member is assigned to this branch."};revalidatePath("/admin","layout");revalidatePublicCatalog();return {success:"Service assignments saved for this branch."};
 }
 export async function saveStaffHours(_s:FormState,f:FormData):Promise<FormState>{
- const {supabase}=await requireArea("admin");const id=z.uuid().safeParse(f.get("staff_id"));if(!id.success)return {error:"Invalid staff."};
+ const {supabase,branchContext}=await resolveWorkspaceBranchContext("admin");if(!branchContext.selectedBranchId)return {error:"Select a branch before editing staff hours."};const id=z.uuid().safeParse(f.get("staff_id"));if(!id.success)return {error:"Invalid staff."};
  let rows;try{const raw=f.get("intervals");if(typeof raw!=="string"||raw.length>10000)throw Error();rows=JSON.parse(raw);}catch{return {error:"Invalid hours."};}
  const v=hoursSchema.safeParse(rows);if(!v.success)return invalid(v.error);
- const {error}=await supabase.rpc("catalog_save_staff_hours",{p_staff:id.data,p_intervals:v.data});if(error)return {error:"Hours could not be saved. Intervals must not overlap or invalidate active appointments."};revalidatePath("/admin","layout");revalidatePath("/staff","layout");return {success:"Staff hours saved."};
+ const {error}=await supabase.rpc("catalog_save_staff_hours_for_branch",{p_branch:branchContext.selectedBranchId,p_staff:id.data,p_intervals:v.data});if(error)return {error:"Hours could not be saved. Intervals must not overlap or invalidate active appointments."};revalidatePath("/admin","layout");revalidatePath("/staff","layout");return {success:"Staff hours saved for this branch."};
 }
 export async function saveException(_s:FormState,f:FormData):Promise<FormState>{
- const {supabase}=await requireArea("admin");const v=exceptionSchema.safeParse(values(f,["staff_id","kind","start","end","reason"]));if(!v.success)return invalid(v.error);
- const {error}=await supabase.rpc("catalog_save_exception",{p_staff:v.data.staff_id,p_kind:v.data.kind,p_start:v.data.start,p_end:v.data.end,p_reason:v.data.reason});if(error)return {error:"Exception could not be saved. Check local times (including daylight saving) and active appointments."};revalidatePath("/admin","layout");revalidatePath("/staff","layout");return {success:"Schedule exception saved."};
+ const {supabase,branchContext}=await resolveWorkspaceBranchContext("admin");if(!branchContext.selectedBranchId)return {error:"Select a branch before editing schedule exceptions."};const v=exceptionSchema.safeParse(values(f,["staff_id","kind","start","end","reason"]));if(!v.success)return invalid(v.error);
+ const {error}=await supabase.rpc("catalog_save_exception_for_branch",{p_branch:branchContext.selectedBranchId,p_staff:v.data.staff_id,p_kind:v.data.kind,p_start:v.data.start,p_end:v.data.end,p_reason:v.data.reason});if(error)return {error:"Exception could not be saved. Check branch-local times (including daylight saving) and active appointments."};revalidatePath("/admin","layout");revalidatePath("/staff","layout");return {success:"Schedule exception saved for this branch."};
 }
 export async function removeException(_s:FormState,f:FormData):Promise<FormState>{
- const {supabase}=await requireArea("admin");const id=z.uuid().safeParse(f.get("id"));if(!id.success)return {error:"Invalid exception."};
- const {data,error}=await supabase.from("staff_schedule_exceptions").delete().eq("id",id.data).select("id");if(error||!data?.length)return {error:"Could not remove the exception. Removing extra hours must not invalidate an appointment."};
+ const {supabase,branchContext}=await resolveWorkspaceBranchContext("admin");if(!branchContext.selectedBranchId)return {error:"Select a branch before removing a schedule exception."};const id=z.uuid().safeParse(f.get("id"));if(!id.success)return {error:"Invalid exception."};
+ const {data,error}=await supabase.rpc("catalog_remove_exception_for_branch",{p_branch:branchContext.selectedBranchId,p_id:id.data});if(error||!data)return {error:"Could not remove the exception. Removing extra hours must not invalidate an appointment."};
  revalidatePath("/admin","layout");revalidatePath("/staff","layout");return {success:"Exception removed."};
 }

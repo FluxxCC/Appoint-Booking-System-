@@ -12,14 +12,14 @@ export async function inviteStaffAction(_previous: FormState, form: FormData): P
   if (!parsed.success) return validationState(parsed.error);
   try {
     const { data, error } = await createPrivilegedClient().auth.admin.inviteUserByEmail(parsed.data.email, {
-      redirectTo: `${siteUrl()}/auth/confirm`, data: { full_name: parsed.data.fullName },
+      redirectTo: `${siteUrl()}/auth/confirm?portal=staff`, data: { full_name: parsed.data.fullName },
     });
     if (error || !data.user) return { error: "The invitation could not be sent. Check the address and email configuration. For an existing account, use the controlled linking form below." };
     // Rechecks live owner/MFA authorization in the DB after the external Auth call.
     const { error: linkError } = await supabase.rpc("link_staff_account", { p_user: data.user.id, p_name: parsed.data.fullName, p_slug: parsed.data.slug });
     if (linkError) return { error: `The email was sent, but staff access was not linked. Verify the account in Supabase and use the linking form below with account ID ${data.user.id}. Check that the staff URL name is unique.` };
     return { success: "Invitation sent and STAFF access linked. The member can confirm the email, set a password and sign in. Existing profile settings are preserved; newly created profiles are unpublished and not bookable." };
-  } catch { return { error: "Invitations are unavailable. Check the server-only Supabase secret, site URL and email delivery configuration." }; }
+  } catch { return { error: "Invitations are unavailable. Check the server-only Supabase secret, site URL and Supabase Auth email configuration." }; }
 }
 
 export async function linkExistingStaffAction(_previous: FormState, form: FormData): Promise<FormState> {

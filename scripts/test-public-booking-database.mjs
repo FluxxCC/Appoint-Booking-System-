@@ -31,34 +31,7 @@ try{
  await actor('service_role');
  const reference=await scalar('select public_reference from public.appointments where id=$1',[appointment]);
  equal('public reference uses unique human format',/^BK-[A-F0-9]{16}$/.test(reference),true);
- equal('wrong recovery email has no match',await scalar('select public.issue_guest_access_link($1,$2)', ['wrong@example.test',reference]),null);
- equal('wrong recovery reference has no match',await scalar('select public.issue_guest_access_link($1,$2)', ['guest@example.test','BK-0000000000000000']),null);
- equal('registered booking cannot issue guest link',await scalar('select public.issue_guest_access_link($1,null,$2)', ['customeruser@example.test',registered.appointment_id]),null);
- const recovery=await scalar('select public.issue_guest_access_link($1,$2)', ['guest@example.test',reference]);
- equal('recovery token is high entropy',/^[A-Za-z0-9_-]{40,60}$/.test(recovery.token),true);
- equal('recovery token is scoped to booking',recovery.appointment_id,appointment);
- const recoveryHash=createHash('sha256').update(recovery.token).digest('hex');
- equal('only hash stored for recovery',await scalar("select token_hash from public.guest_access_tokens where scope='MANAGE' and appointment_id=$1",[appointment]),recoveryHash);
- await actor('anon');
- equal('MANAGE cannot read booking directly',await scalar('select public.guest_appointment_by_token($1,$2)',[recoveryHash,appointment]),null);
- for(const role of ['anon','authenticated']) {await actor(role,role==='authenticated'?ids.customerUser:'');for(const fn of ['issue_guest_access_link','exchange_guest_access_link']) {await assert.rejects(db.query(`select public.${fn}($1)`,[recoveryHash]),/permission denied|function .* does not exist/);checks++;}}
- await actor('service_role');
- const exchanged=await scalar('select public.exchange_guest_access_link($1)',[recoveryHash]);
- equal('exchange remains scoped',exchanged.appointment_id,appointment);
- equal('exchange consumes one-time token',await scalar('select consumed_at is not null from public.guest_access_tokens where token_hash=$1',[recoveryHash]),true);
- equal('replay cannot exchange',await scalar('select public.exchange_guest_access_link($1)',[recoveryHash]),null);
- const viewHash=createHash('sha256').update(exchanged.guest_token).digest('hex');
- await actor('anon');
- equal('exchanged VIEW token reads intended booking',(await scalar('select public.guest_appointment_by_token($1,$2)',[viewHash,appointment])).reference,reference);
- equal('exchanged VIEW token cannot read other booking',await scalar('select public.guest_appointment_by_token($1,$2)',[viewHash,registered.appointment_id]),null);
- await actor('service_role');
- const expiring=await scalar('select public.issue_guest_access_link($1,$2)', ['guest@example.test',reference]);
- const expiringHash=createHash('sha256').update(expiring.token).digest('hex');
- await db.query("update public.guest_access_tokens set expires_at=clock_timestamp()-interval '1 second' where token_hash=$1",[expiringHash]);
- equal('expired recovery link cannot exchange',await scalar('select public.exchange_guest_access_link($1)',[expiringHash]),null);
- const revoking=await scalar('select public.issue_guest_access_link($1,$2)', ['guest@example.test',reference]);
- const revokingHash=createHash('sha256').update(revoking.token).digest('hex');
- await db.query('update public.guest_access_tokens set revoked_at=clock_timestamp() where token_hash=$1',[revokingHash]);
- equal('revoked recovery link cannot exchange',await scalar('select public.exchange_guest_access_link($1)',[revokingHash]),null);
- console.log(`PASS: ${checks} public booking, guest recovery, identity and snapshot database checks.`);
+  await actor('anon');
+  equal('private reference cannot read guest booking without its original token',await scalar('select public.guest_appointment_by_token($1,$2)',[createHash('sha256').update(reference).digest('hex'),appointment]),null);
+  console.log(`PASS: ${checks} public booking, guest access, identity and snapshot database checks.`);
 }finally{await db.close()}

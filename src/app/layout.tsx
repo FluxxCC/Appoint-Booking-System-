@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Appointment Business System",
-  description: "Independent business appointment management foundation",
+  title: "Usteng Barber Shop",
+  description: "Book your next appointment at Usteng Barber Shop.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

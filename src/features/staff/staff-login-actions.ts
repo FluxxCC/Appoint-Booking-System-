@@ -17,7 +17,7 @@ export async function inviteStaffLoginAction(_state: FormState, form: FormData):
 
   try {
     const { data, error } = await createPrivilegedClient().auth.admin.inviteUserByEmail(parsed.data.email, {
-      redirectTo: `${siteUrl()}/auth/confirm`,
+      redirectTo: `${siteUrl()}/auth/confirm?portal=staff`,
     });
     if (error || !data.user) {
       return { error: "The invitation could not be sent. If this person already has an account, connect their existing account below." };
@@ -33,7 +33,7 @@ export async function inviteStaffLoginAction(_state: FormState, form: FormData):
     }
     return { success: "Invitation sent. Login access is enabled; the team member can confirm their email and choose their own password." };
   } catch {
-    return { error: "Invitations are unavailable. Check the server-side account and email delivery configuration." };
+    return { error: "Invitations are unavailable. Check the server-side Supabase Auth configuration." };
   }
 }
 

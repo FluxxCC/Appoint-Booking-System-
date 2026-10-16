@@ -2,16 +2,18 @@
 import { useActionState, useId, useState } from "react";
 import type { FormState } from "@/features/auth/schemas";
 import type { AdminData } from "./types";
-import { saveSettings,saveHomeArea,saveApprovalMode,saveHours,saveClosure,saveAnnouncement,deleteClosure,deleteAnnouncement } from "./actions";
+import { saveSettings,saveApprovalMode,saveHours,saveClosure,saveAnnouncement,deleteClosure,deleteAnnouncement } from "./actions";
 import { localInput } from "./format";
 import { formatClockTime } from "@/lib/time";
 
 const input="field-control text-sm";
 const button="button-primary disabled:cursor-not-allowed disabled:opacity-50";
-export type Field={name:string;label:string;value?:string|number|boolean;type?:string;hint?:string;required?:boolean;min?:number;max?:number;step?:string;minLength?:number;maxLength?:number;options?:{value:string;label:string}[];section?:string;sectionHint?:string;fullWidth?:boolean};
+export type Field={name:string;label:string;value?:string|number|boolean;type?:string;hint?:string;required?:boolean;min?:number;max?:number;step?:string;minLength?:number;maxLength?:number;options?:{value:string;label:string}[];section?:string;sectionHint?:string;fullWidth?:boolean;showWhen?:{name:string;value:string|boolean}};
 function Feedback({state}:{state:FormState}) { return <>{state.error&&<p role="alert" className="rounded-xl border border-danger/20 bg-danger-soft p-4 text-sm leading-6 text-danger">{state.error}</p>}{state.success&&<p role="status" className="rounded-xl border border-accent/15 bg-accent-soft p-4 text-sm leading-6 text-accent-dark">{state.success}</p>}</>; }
 function Fields({fields}:{fields:Field[]}) {
   const prefix=useId();
+  const [values,setValues]=useState<Record<string,string|number|boolean>>(()=>Object.fromEntries(fields.map(field=>[field.name,field.value??""])));
+  const isVisible=(field:Field)=>!field.showWhen||values[field.showWhen.name]===field.showWhen.value;
   const groups=fields.reduce<{title:string;hint?:string;fields:Field[]}[]>((all,field)=>{
     const current=all[all.length-1];
     if(field.section&&current?.title!==field.section)all.push({title:field.section,hint:field.sectionHint,fields:[]});
@@ -19,34 +21,34 @@ function Fields({fields}:{fields:Field[]}) {
     all[all.length-1].fields.push(field);
     return all;
   },[]);
-  return <div className="space-y-5">{groups.map((group,index)=><section key={`${group.title}-${index}`} className={group.title?"rounded-2xl border border-line bg-white p-4 sm:p-5":""}>
+  return <div className="space-y-5">{groups.map((group,index)=><section key={`${group.title}-${index}`} hidden={!group.fields.some(isVisible)} className={group.title?"rounded-2xl border border-line bg-white p-4 sm:p-5":""}>
     {group.title&&<div className="mb-5 border-b border-line pb-3"><h3 className="text-sm font-semibold tracking-tight text-ink">{group.title}</h3>{group.hint&&<p className="mt-1 text-sm leading-5 text-muted">{group.hint}</p>}</div>}
     <div className="grid gap-x-5 gap-y-4 sm:grid-cols-2 sm:gap-x-6 sm:gap-y-5">{group.fields.map(f=>{
       const id=`${prefix}-${f.name}`;
       const description=f.hint?`${id}-hint`:undefined;
-      if(f.type==="checkbox")return <label key={f.name} htmlFor={id} className={`flex min-h-14 cursor-pointer items-start gap-3 rounded-xl border border-line bg-canvas/50 p-4 transition hover:border-accent/40 hover:bg-accent-soft/40 ${f.fullWidth===false?"":"sm:col-span-2"}`}>
-        <input id={id} name={f.name} type="checkbox" defaultChecked={Boolean(f.value)} className="mt-0.5 size-5 shrink-0 accent-accent" aria-describedby={description}/>
+      if(f.type==="checkbox")return <label key={f.name} hidden={!isVisible(f)} htmlFor={id} className={`flex min-h-14 cursor-pointer items-start gap-3 rounded-xl border border-line bg-canvas/50 p-4 transition hover:border-accent/40 hover:bg-accent-soft/40 ${f.fullWidth===false?"":"sm:col-span-2"}`}>
+        <input id={id} name={f.name} type="checkbox" defaultChecked={Boolean(f.value)} onChange={event=>setValues(current=>({...current,[f.name]:event.target.checked}))} className="mt-0.5 size-5 shrink-0 accent-accent" aria-describedby={description}/>
         <span className="min-w-0"><span className="block text-sm font-medium text-ink">{f.label}</span>{f.hint&&<span id={description} className="mt-1 block text-xs leading-5 text-muted">{f.hint}</span>}</span>
       </label>;
-      return <div key={f.name} className={f.type==="textarea"||f.fullWidth?"sm:col-span-2":""}>
+      return <div key={f.name} hidden={!isVisible(f)} className={f.type==="textarea"||f.fullWidth?"sm:col-span-2":""}>
         <label htmlFor={id} className="mb-1.5 block text-sm font-medium text-ink">{f.label}{f.required&&<span aria-hidden="true" className="ml-1 text-danger">*</span>}</label>
-        {f.options?<select id={id} name={f.name} defaultValue={String(f.value??"")} required={f.required} className={input}>{f.options.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</select>:f.type==="textarea"?<textarea id={id} name={f.name} defaultValue={String(f.value??"")} rows={4} minLength={f.minLength} maxLength={f.maxLength} required={f.required} className={`${input} min-h-28 resize-y leading-6`} aria-describedby={description}/>:<input id={id} name={f.name} type={f.type??"text"} defaultValue={String(f.value??"")} required={f.required} min={f.min} max={f.max} step={f.step} minLength={f.minLength} maxLength={f.maxLength} className={input} aria-describedby={description}/>}
+        {f.options?<select id={id} name={f.name} defaultValue={String(f.value??"")} onChange={event=>setValues(current=>({...current,[f.name]:event.target.value}))} required={f.required} className={input}>{f.options.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</select>:f.type==="textarea"?<textarea id={id} name={f.name} defaultValue={String(f.value??"")} rows={4} minLength={f.minLength} maxLength={f.maxLength} required={f.required} className={`${input} min-h-28 resize-y leading-6`} aria-describedby={description}/>:<input id={id} name={f.name} type={f.type??"text"} defaultValue={String(f.value??"")} required={f.required} min={f.min} max={f.max} step={f.step} minLength={f.minLength} maxLength={f.maxLength} className={input} aria-describedby={description}/>}
         {f.hint&&<p id={description} className="mt-1.5 text-xs leading-5 text-muted">{f.hint}</p>}
       </div>;
     })}</div>
   </section>)}</div>;
 }
-export function Form({action,fields,hidden={},submit="Save changes",submitClassName=button,children}:{action:(s:FormState,f:FormData)=>Promise<FormState>;fields:Field[];hidden?:Record<string,string>;submit?:string;submitClassName?:string;children?:React.ReactNode}) {
+export function Form({action,fields,advancedFields,advancedTitle="More options",advancedHint="These settings are optional and can be changed later.",hidden={},submit="Save changes",submitClassName=button,children}:{action:(s:FormState,f:FormData)=>Promise<FormState>;fields:Field[];advancedFields?:Field[];advancedTitle?:string;advancedHint?:string;hidden?:Record<string,string>;submit?:string;submitClassName?:string;children?:React.ReactNode}) {
   const [state,dispatch,pending]=useActionState(action,{});
-  return <form action={dispatch} aria-busy={pending} className="space-y-6">{Object.entries(hidden).map(([name,value])=><input key={name} type="hidden" name={name} value={value}/>)}<fieldset disabled={pending} className="space-y-6">{fields.length>0&&<Fields fields={fields}/>} {children}<div className="border-t border-line pt-5"><button className={`${submitClassName} w-full sm:w-auto`} disabled={pending}>{pending?"Saving…":submit}</button></div></fieldset>{(state.error||state.success)&&<div><Feedback state={state}/></div>}</form>;
+  return <form action={dispatch} aria-busy={pending} className="space-y-6">{Object.entries(hidden).map(([name,value])=><input key={name} type="hidden" name={name} value={value}/>)}<fieldset disabled={pending} className="space-y-6">{fields.length>0&&<Fields fields={fields}/>} {advancedFields?.length ? <details className="group overflow-hidden rounded-2xl border border-line bg-white"><summary className="flex min-h-16 cursor-pointer list-none items-center justify-between gap-4 px-4 py-4 marker:hidden focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent sm:px-5 [&::-webkit-details-marker]:hidden"><span className="min-w-0"><span className="block text-sm font-semibold text-ink">{advancedTitle}</span><span className="mt-1 block text-sm leading-5 text-muted">{advancedHint}</span></span><span aria-hidden="true" className="grid size-9 shrink-0 place-items-center rounded-full bg-accent-soft text-lg font-medium text-accent-dark transition-transform group-open:rotate-45">+</span></summary><div className="border-t border-line px-4 py-4 sm:px-5"><Fields fields={advancedFields}/></div></details> : null}{children}<div className="border-t border-line pt-5"><button className={`${submitClassName} w-full sm:w-auto`} disabled={pending}>{pending?"Saving…":submit}</button></div></fieldset>{(state.error||state.success)&&<div><Feedback state={state}/></div>}</form>;
 }
-export function SettingsForm({data}:{data:AdminData}) {
+export function SettingsForm({data,section="all"}:{data:AdminData;section?:"all"|"profile"|"booking"|"policies"}) {
   const b=data.business, p=data.policy;
-  return <Form action={saveSettings} hidden={{expected_updated_at:data.expected_updated_at??""}} fields={[
+  const fields:Field[]=[
     {section:"Business profile",sectionHint:"The public contact and description customers see.",name:"name",label:"Business name",value:b?.name,required:true,maxLength:200},
     {name:"contact_email",label:"Business email",type:"email",value:b?.contact_email??"",maxLength:254},
     {name:"contact_phone",label:"Phone number",type:"tel",value:b?.contact_phone??"",maxLength:40},
-    {name:"address",label:"Address",value:b?.address??"",maxLength:1000},
+    {name:"address",label:"Business location address",value:b?.address??"",maxLength:1000,hint:"This is your business address. Home Service customers enter their visit destination when booking."},
     {name:"description",label:"Business description",type:"textarea",value:b?.description,maxLength:4000},
     {section:"Time and booking defaults",sectionHint:"These defaults apply to new scheduling and service setup.",name:"timezone",label:"Business timezone",value:b?.timezone??"Asia/Manila",required:true,hint:"Use an IANA timezone such as Asia/Manila. Locked after appointments exist."},
     {name:"currency",label:"Currency",value:b?.currency??"PHP",required:true,hint:"ISO currency code, such as PHP, USD or EUR. Locked after appointments exist."},
@@ -59,13 +61,26 @@ export function SettingsForm({data}:{data:AdminData}) {
     {name:"customer_registration_enabled",label:"Allow customer account registration",type:"checkbox",value:b?.customer_registration_enabled??true,hint:"Turning this off blocks new self-registration. Existing accounts remain available."},
     {section:"Customer policies",sectionHint:"These policies are shown to customers during booking and on the refund policy page.",name:"terms",label:"Booking policy",type:"textarea",value:p?.terms??"",maxLength:10000,required:true,hint:"Saving changes publishes a new policy version. Existing requests keep the policy they accepted."},
     {name:"refund_policy",label:"Refund policy",type:"textarea",value:b?.refund_policy??"",maxLength:10000,required:true,hint:"This appears on the public refund policy page. Review it for your business before saving."},
-  ]}><p className="rounded-xl border border-info/15 bg-info-soft/60 p-4 text-sm leading-6 text-ink">Payments are requested only after a booking is accepted. Saving policy changes applies them to new booking requests.</p></Form>;
+  ];
+  const groups={profile:["Business profile","Time and booking defaults"],booking:["Booking rules"],policies:["Customer policies"]} as const;
+  const targetGroups:readonly string[]=section==="profile"?groups.profile:section==="booking"?groups.booking:groups.policies;
+  let currentGroup="";
+  const visible=section==="all"?fields:fields.filter(field=>{
+    if(field.section)currentGroup=field.section;
+    return targetGroups.includes(currentGroup);
+  });
+  const visibleNames=new Set(visible.map(field=>field.name));
+  const values:Record<string,string>={
+    name:b?.name??"",description:b?.description??"",contact_email:b?.contact_email??"",contact_phone:b?.contact_phone??"",address:b?.address??"",timezone:b?.timezone??"Asia/Manila",currency:b?.currency??"PHP",scheduling_interval_minutes:String(b?.scheduling_interval_minutes??15),default_buffer_minutes:String(b?.default_buffer_minutes??0),minimum_notice_minutes:String(p?.minimum_notice_minutes??60),maximum_advance_days:String(p?.maximum_advance_days??90),payment_window_minutes:String(p?.payment_window_minutes??30),terms:p?.terms??"",refund_policy:b?.refund_policy??"",expected_updated_at:data.expected_updated_at??"",
+  };
+  const hidden:Record<string,string>={};
+  for(const [name,value] of Object.entries(values))if(!visibleNames.has(name))hidden[name]=value;
+  for(const name of ["guest_booking_enabled","customer_registration_enabled"]){
+    const enabled=name==="guest_booking_enabled"?Boolean(b?.guest_booking_enabled??true):Boolean(b?.customer_registration_enabled??true);
+    if(!visibleNames.has(name))hidden[name]=String(enabled);
+  }
+  return <Form action={saveSettings} hidden={hidden} fields={visible}>{section==="booking"&&<p className="rounded-xl border border-info/15 bg-info-soft/60 p-4 text-sm leading-6 text-ink">Payments are requested only after a booking is accepted. Saving policy changes applies them to new booking requests.</p>}</Form>;
 }
-export function HomeAreaForm({data}:{data:AdminData}){const b=data.business;return <Form action={saveHomeArea} submit="Save service area" fields={[
- {section:"Business map pin",sectionHint:"This is the service-area origin. It is never hardcoded and is not shown in the public catalog.",name:"latitude",label:"Latitude",type:"number",value:b?.service_origin_latitude??"",min:-90,max:90,step:"any"},
- {name:"longitude",label:"Longitude",type:"number",value:b?.service_origin_longitude??"",min:-180,max:180,step:"any"},
- {section:"Maximum Home Service radius",sectionHint:"Leave blank to disable radius enforcement. A radius requires both business coordinates.",name:"radius",label:"Maximum service radius (km)",type:"number",value:b?.home_service_max_radius_km??"",min:0.1,max:500,step:"any"},
- ]}><p className="rounded-xl bg-canvas p-4 text-sm leading-6 text-muted">Customers still choose a manual address or explicitly share their current device location. Home Service stores only the confirmed destination; there is no live tracking.</p></Form>}
 export function ApprovalModeForm({mode}:{mode:string}) {
   return <Form action={saveApprovalMode} submit="Save approval mode" fields={[{name:"mode",label:"How requests are approved",value:mode,required:true,options:[
     {value:"ADMIN_APPROVAL",label:"Owner or administrator reviews requests"},
@@ -120,12 +135,50 @@ export function HoursForm({rows,action=saveHours,hidden={}}:{rows:{weekday:numbe
     <Feedback state={state}/>
   </form>;
 }
-export function ClosureForm() { return <Form action={saveClosure} submit="Create closure" fields={[
-  {section:"Closure timing",sectionHint:"Choose a date and whether the business is closed all day or for part of the day.",name:"date",label:"Closure date",type:"date",required:true},
-  {name:"full_day",label:"Close for the full day",type:"checkbox",value:true,hint:"Clear this option to enter partial closure hours."},
-  {name:"start",label:"Partial closure starts",type:"time"}, {name:"end",label:"Partial closure ends",type:"time"},
-  {section:"Customer information",sectionHint:"This reason is displayed to customers when they browse availability.",name:"reason",label:"Closure message",required:true,maxLength:500},
-]}/>; }
+export function ClosureForm() {
+  const [state,dispatch,pending]=useActionState(saveClosure,{});
+  const [mode,setMode]=useState<"full"|"partial">("full");
+  const [date,setDate]=useState("");
+  const [reason,setReason]=useState("");
+  const fullDay=mode==="full";
+  return <form action={dispatch} aria-busy={pending} className="space-y-6">
+    <fieldset disabled={pending} className="space-y-6">
+      <input type="hidden" name="full_day" value={String(fullDay)}/>
+      <section aria-labelledby="closure-date-title" className="space-y-4">
+        <div><h3 id="closure-date-title" className="text-sm font-semibold text-ink">When should bookings be blocked?</h3><p className="mt-1 text-sm leading-5 text-muted">Choose the date first. Times follow the business timezone.</p></div>
+        <label className="block max-w-sm text-sm font-medium text-ink" htmlFor="closure-date">Closure date<span aria-hidden="true" className="ml-1 text-danger">*</span>
+          <input id="closure-date" name="date" type="date" required value={date} onChange={event=>setDate(event.target.value)} className={`${input} mt-1.5`}/>
+        </label>
+        <fieldset className="space-y-2">
+          <legend className="mb-2 text-sm font-medium text-ink">How long will you be closed?</legend>
+          <label className={`flex cursor-pointer gap-3 rounded-xl border p-4 transition ${fullDay?"border-accent bg-accent-soft/50":"border-line hover:border-accent/40"}`}>
+            <input type="radio" name="closure-mode" value="full" checked={fullDay} onChange={()=>setMode("full")} className="mt-0.5 size-4 accent-accent"/>
+            <span><span className="block text-sm font-semibold text-ink">All day</span><span className="mt-1 block text-xs leading-5 text-muted">No appointment times will be available on this date.</span></span>
+          </label>
+          <label className={`flex cursor-pointer gap-3 rounded-xl border p-4 transition ${!fullDay?"border-accent bg-accent-soft/50":"border-line hover:border-accent/40"}`}>
+            <input type="radio" name="closure-mode" value="partial" checked={!fullDay} onChange={()=>setMode("partial")} className="mt-0.5 size-4 accent-accent"/>
+            <span><span className="block text-sm font-semibold text-ink">Specific hours</span><span className="mt-1 block text-xs leading-5 text-muted">Keep bookings open outside a time window.</span></span>
+          </label>
+        </fieldset>
+        {!fullDay&&<div className="grid gap-4 rounded-xl border border-accent/20 bg-canvas/60 p-4 sm:grid-cols-2">
+          <label className="text-sm font-medium text-ink" htmlFor="closure-start">From<span aria-hidden="true" className="ml-1 text-danger">*</span><input id="closure-start" name="start" type="time" required className={`${input} mt-1.5`}/></label>
+          <label className="text-sm font-medium text-ink" htmlFor="closure-end">Until<span aria-hidden="true" className="ml-1 text-danger">*</span><input id="closure-end" name="end" type="time" required className={`${input} mt-1.5`}/></label>
+          <p className="text-xs leading-5 text-muted sm:col-span-2">The end time must be later than the start time. For closures spanning midnight, add a separate closure for each date.</p>
+        </div>}
+      </section>
+      <section aria-labelledby="closure-message-title" className="space-y-3 border-t border-line pt-5">
+        <div><h3 id="closure-message-title" className="text-sm font-semibold text-ink">What should customers see?</h3><p className="mt-1 text-sm leading-5 text-muted">This message appears when customers check availability during the closure.</p></div>
+        <label className="block text-sm font-medium text-ink" htmlFor="closure-reason">Customer-facing message<span aria-hidden="true" className="ml-1 text-danger">*</span>
+          <textarea id="closure-reason" name="reason" required maxLength={500} value={reason} onChange={event=>setReason(event.target.value)} placeholder="For example: Closed for a private event" rows={3} className={`${input} mt-1.5 min-h-24 resize-y leading-6`}/>
+        </label>
+        <p className="text-right text-xs tabular-nums text-muted">{reason.length}/500</p>
+      </section>
+      {date&&<p className="rounded-xl bg-canvas p-4 text-sm leading-6 text-muted"><strong className="text-ink">Review:</strong> {date} · {fullDay?"All day":"Specific hours"}. Existing appointments remain unchanged.</p>}
+      <div className="border-t border-line pt-5"><button className={`${button} w-full sm:w-auto`} disabled={pending}>{pending?"Saving closure…":"Schedule closure"}</button></div>
+    </fieldset>
+    {(state.error||state.success)&&<Feedback state={state}/>}
+  </form>;
+}
 export function AnnouncementForm({row,zone}:{row?:NonNullable<AdminData["announcements"]>[number];zone:string}) { return <Form action={saveAnnouncement} hidden={{id:row?.id??""}} submit={row?"Save announcement":"Create announcement"} fields={[
   {section:"Announcement content",sectionHint:"Write a concise update for customers.",name:"title",label:"Title",value:row?.title,required:true,maxLength:200},
   {name:"body",label:"Message",type:"textarea",value:row?.body,required:true,maxLength:10000},

@@ -43,6 +43,7 @@ export async function redirectAfterLogin(next?: string | null): Promise<never> {
   const { principal } = await getAccess();
   if (!principal) redirect("/login");
   const destination = safeAppointmentDestination(next);
+  if (destination?.startsWith("/account/book?") && principal.profileActive && principal.roles.length === 0) redirect(destination);
   if (destination?.startsWith("/account/appointments/") && !principal.roles.includes("OWNER") && !principal.roles.includes("ADMIN") && !principal.roles.includes("STAFF")) {
     redirect(destination);
   }

@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getAccess, requireArea, redirectAfterLogin } from "@/lib/auth/access.server";
 import type { AppRole } from "@/lib/auth/access";
 import { siteUrl } from "@/lib/auth/site-url.server";
+import { safeAppointmentDestination } from "@/lib/auth/access";
 import { emailSchema, loginSchema, registrationSchema, resetSchema, customerProfileSchema, validationState, type FormState } from "./schemas";
 import { provisionVerifiedCustomer } from "./provision-customer.server";
 
@@ -68,19 +69,20 @@ export async function registerAction(_previous: FormState, form: FormData): Prom
   const parsed = registrationSchema.safeParse({ fullName: form.get("fullName"), email: form.get("email"), password: form.get("password"), phone: form.get("phone") ?? "" });
   if (!parsed.success) return validationState(parsed.error);
   const value = parsed.data;
+  const next = safeAppointmentDestination(String(form.get("next") ?? ""));
   const supabase = await createClient();
   const registration = await supabase.rpc("registration_enabled");
   if (registration.error || registration.data !== true) return { error: "Customer registration is currently unavailable. Please contact the business." };
   const { data, error } = await supabase.auth.signUp({
     email: value.email, password: value.password,
-    options: { emailRedirectTo: `${siteUrl()}/auth/callback`, data: { full_name: value.fullName, phone: value.phone } },
+    options: { emailRedirectTo: `${siteUrl()}/auth/callback${next ? `?next=${encodeURIComponent(next)}` : ""}`, data: { full_name: value.fullName, phone: value.phone } },
   });
   if (error) return { error: error.code === "weak_password" ? "Choose a stronger password that meets the business's password policy." : "Unable to create an account. If you already registered, sign in or reset your password. Otherwise, try again later." };
   if (!data.session) return { success: "Check your email to verify your account. If you already have an account, sign in or reset your password." };
   const { error: profileError } = await supabase.rpc("complete_customer_profile", { p_name: value.fullName, p_phone: value.phone || undefined });
   if (profileError) redirect("/account/setup");
   revalidatePath("/", "layout");
-  redirect("/account");
+  redirect(next ?? "/account");
 }
 
 export async function forgotPasswordAction(_previous: FormState, form: FormData): Promise<FormState> {
@@ -102,7 +104,7 @@ export async function resendConfirmationAction(_previous: FormState, form: FormD
 }
 
 export async function resetPasswordAction(_previous: FormState, form: FormData): Promise<FormState> {
-  const { supabase } = await requireArea("account");
+  const { supabase, principal } = await requireArea("account");
   const parsed = resetSchema.safeParse({ password: form.get("password"), confirmPassword: form.get("confirmPassword") });
   if (!parsed.success) return validationState(parsed.error);
   const { error } = await supabase.auth.updateUser({ password: parsed.data.password });
@@ -110,7 +112,16 @@ export async function resetPasswordAction(_previous: FormState, form: FormData):
   const { error: signoutError } = await supabase.auth.signOut({ scope: "global" });
   if (signoutError) return { success: "Password changed. Please sign out before signing in with your new password." };
   revalidatePath("/", "layout");
-  redirect("/login?notice=password-updated");
+  const invitedPortal = form.get("portal");
+  const portal = invitedPortal === "owner" || invitedPortal === "admin" || invitedPortal === "staff" ? invitedPortal : null;
+  const loginPath = principal.roles.includes("OWNER") ? "/owner/login"
+    : principal.roles.includes("ADMIN") ? "/admin/login"
+    : principal.roles.includes("STAFF") ? "/staff/login"
+    : portal === "owner" ? "/owner/login"
+    : portal === "admin" ? "/admin/login?notice=invite-pending"
+    : portal === "staff" ? "/staff/login?notice=invite-confirmed"
+    : "/login?notice=password-updated";
+  redirect(loginPath);
 }
 
 export async function logoutAction(): Promise<void> {
@@ -134,12 +145,18 @@ export async function saveCustomerProfileAction(_previous: FormState, form: Form
 export async function confirmEmailAction(_previous: FormState, form: FormData): Promise<FormState> {
   const tokenHash = form.get("token_hash");
   const type = form.get("type");
+  const requestedPortal = form.get("portal");
+  const portal = requestedPortal === "owner" || requestedPortal === "admin" || requestedPortal === "staff" ? requestedPortal : null;
   if (typeof tokenHash !== "string" || tokenHash.length > 2048 || !tokenHash || (type !== "signup" && type !== "recovery" && type !== "invite")) return { error: "This link is invalid. Request a fresh email." };
   const supabase = await createClient();
   const { error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type });
   if (error) return { error: "This link has expired or was already used. Request a fresh email." };
   revalidatePath("/", "layout");
-  if (type === "recovery" || type === "invite") redirect("/reset-password");
+  if (type === "invite") redirect(`/reset-password${portal ? `?portal=${portal}` : ""}`);
+  if (type === "recovery") redirect("/reset-password");
   await provisionVerifiedCustomer(supabase);
-  redirect("/account");
+  const { error: signOutError } = await supabase.auth.signOut({ scope: "local" });
+  if (signOutError) return { error: "Your email is confirmed. Sign out of this browser, then sign in from the customer login page." };
+  revalidatePath("/", "layout");
+  redirect("/login?notice=email-confirmed");
 }

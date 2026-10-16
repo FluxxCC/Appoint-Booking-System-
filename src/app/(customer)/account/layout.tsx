@@ -8,5 +8,5 @@ export const dynamic = "force-dynamic";
 export default async function Layout({ children }: { children: React.ReactNode }) {
   const { principal } = await requireArea("account");
   const site = await readPublicWebsite();
-  return <AppShell area="account" principal={principal} announcement={site.announcements[0]??null} businessName={site.business?.name} logoPath={site.website?.logo_path}>{children}</AppShell>;
+  return <AppShell area="account" principal={principal} announcement={site.announcements[0]??null} businessName={site.business?.name}>{children}</AppShell>;
 }

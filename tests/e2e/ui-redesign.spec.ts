@@ -2,8 +2,9 @@ import { expect, test } from "./fixtures";
 
 async function expectWorkspaceNavigation(page: import("@playwright/test").Page, area: "admin" | "staff" | "account", width: number) {
   if (width < 640) {
-    await page.locator("details > summary").first().click();
-    await expect(page.getByRole("navigation", { name: `${area} menu` })).toBeVisible();
+    await page.locator(".workspace-mobile-menu-toggle").click();
+    await expect(page.locator("#workspace-sidebar-toggle")).toBeChecked();
+    await expect(page.getByRole("navigation", { name: `${area} navigation` })).toBeVisible();
   } else {
     await expect(page.getByRole("navigation", { name: `${area} navigation` })).toBeVisible();
   }
@@ -51,6 +52,14 @@ test("public journey keeps imagery and navigation usable across viewports", asyn
   }
 });
 
+test("public navigation exposes the correct work sign-in portals", async ({ page }) => {
+  await page.goto("/");
+  await page.getByText("Work sign in", { exact: true }).click();
+  await expect(page.getByRole("link", { name: "Owner", exact: true })).toHaveAttribute("href", "/owner/login");
+  await expect(page.getByRole("link", { name: "Administrator", exact: true })).toHaveAttribute("href", "/admin/login");
+  await expect(page.getByRole("link", { name: "Staff", exact: true })).toHaveAttribute("href", "/staff/login");
+});
+
 test("management views remain navigable on a narrow screen", async ({ page, request }, testInfo) => {
   test.setTimeout(90_000);
   await request.put("http://127.0.0.1:54322/__e2e/state", { data: { reset: true } });
@@ -62,9 +71,10 @@ test("management views remain navigable on a narrow screen", async ({ page, requ
   await expect(page).not.toHaveURL(/\/login/, { timeout: 15_000 });
   for (const width of [320, 375, 390, 430, 768]) {
     await page.setViewportSize({ width, height: 844 });
-    for (const [route, heading] of [["/admin", "Overview"], ["/admin/appointments", "Appointments"], ["/admin/calendar", "Calendar"], ["/admin/services", "Services"], ["/admin/staff", "Staff"], ["/admin/settings", "Business settings"], ["/admin/access", "Administrator access"], ["/admin/staff/accounts", "Staff login access"]]) {
+    for (const [route, heading] of [["/admin", "Overview"], ["/admin/appointments", "Appointments"], ["/admin/calendar", "Calendar"], ["/admin/services", "Services"], ["/admin/branches", "Branches"], ["/admin/staff", "Staff"], ["/admin/settings", "Business settings"], ["/admin/access", "Administrator access"], ["/admin/staff/accounts", "Staff login access"]]) {
       await page.goto(route);
       await expect(page.getByRole("heading", { name: heading, exact: true, level: 1 })).toBeVisible();
+      if (route === "/admin") await expect(page.getByText("Current branch view")).toHaveCount(0);
       await expectWorkspaceNavigation(page, "admin", width);
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
       expect(overflow, `${route} at ${width}px`).toBeLessThanOrEqual(1);
@@ -72,7 +82,7 @@ test("management views remain navigable on a narrow screen", async ({ page, requ
   }
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/admin");
-  await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
+  await expect(page.locator("main").getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("owner-mobile.png"), fullPage: true, caret: "initial" });
   await page.goto("/admin/appointments");
   await expect(page.getByRole("heading", { name: "Appointments", exact: true, level: 1 })).toBeVisible();
@@ -83,6 +93,16 @@ test("management views remain navigable on a narrow screen", async ({ page, requ
   await page.goto("/admin/staff/accounts");
   await expect(page.getByRole("heading", { name: "Staff login access", level: 1 })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("staff-login-access-mobile.png"), fullPage: true, caret: "initial" });
+  await page.goto("/admin/branches");
+  await expect(page.getByRole("heading", { name: "Branches", level: 1 })).toBeVisible();
+  await expect(page.getByText("Manage your business locations and contact details.", { exact: false })).toBeVisible();
+  await expect(page.getByText("New locations start as drafts.", { exact: false })).toBeVisible();
+  await expect(page.getByText("Branch rollout")).toHaveCount(0);
+  await expect(page.getByText("Home Service availability", { exact: false })).toHaveCount(0);
+  await expect(page.getByText("business map pin", { exact: false })).toHaveCount(0);
+  await page.goto("/admin/services");
+  await expect(page.getByText("The customer enters the visit address and map pin for each Home Service booking.")).toBeVisible();
+  await expect(page.getByText("Business location address", { exact: false })).toHaveCount(0);
 });
 
 test("staff and customer pages stay usable on phones", async ({ page, request }, testInfo) => {
@@ -99,9 +119,11 @@ test("staff and customer pages stay usable on phones", async ({ page, request },
   await signIn("staff@example.test", "e2e-staff-passphrase", "/staff/login");
   for (const width of [320, 375, 390, 430, 768]) {
     await page.setViewportSize({ width, height: 844 });
-    for (const route of ["/staff", "/staff/calendar", "/staff/appointments", "/staff/availability"]) {
+    for (const route of ["/staff", "/staff/calendar", "/staff/appointments", "/staff/availability", "/staff/home-service"]) {
       await page.goto(route);
       await expect(page.locator("main h1").first()).toBeVisible();
+      if (route === "/staff") await expect(page.getByText("Current branch view")).toHaveCount(0);
+      if (route === "/staff/availability") await expect(page.getByRole("heading", { name: "Your availability" })).toBeVisible();
       await expectWorkspaceNavigation(page, "staff", width);
       expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth), `${route} at ${width}px`).toBeLessThanOrEqual(1);
     }
@@ -111,7 +133,8 @@ test("staff and customer pages stay usable on phones", async ({ page, request },
   await expect(page.getByRole("heading", { name: "Your day" })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("staff-mobile.png"), fullPage: true, caret: "initial" });
   await page.goto("/staff/appointments");
-  await expect(page.getByRole("heading", { name: "Appointments", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Requests", level: 1 })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Profile", exact: true })).toHaveCount(0);
   await page.screenshot({ path: testInfo.outputPath("staff-appointments-mobile.png"), fullPage: true, caret: "initial" });
   await page.getByRole("button", { name: "Sign out" }).click();
   await signIn("customer@example.test", "e2e-customer-passphrase", "/login");

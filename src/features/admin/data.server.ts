@@ -1,9 +1,11 @@
 import "server-only";
+import { cache } from "react";
 import { z } from "zod";
 import { requireArea } from "@/lib/auth/access.server";
 import { filtersSchema } from "./schemas";
 import type { AdminData, Appointment } from "./types";
 import { deriveHomeServiceStatus } from "./home-service-status";
+import { resolveWorkspaceBranchContext } from "@/features/branches/workspace-context.server";
 
 export type SearchParams = Record<string,string|string[]|undefined>;
 const customerDirectoryFiltersSchema = z.object({
@@ -14,8 +16,9 @@ const customerDirectoryFiltersSchema = z.object({
 export async function readCustomerDirectory(search: SearchParams = {}) {
   const parsed = customerDirectoryFiltersSchema.safeParse({ kind: search.kind, q: search.q, page: search.page });
   if (!parsed.success) throw new Error("Invalid customer directory filters. Clear the filters and try again.");
-  const { supabase } = await requireArea("admin");
-  const { data, error } = await supabase.rpc("admin_customer_directory", {
+  const { supabase, branchContext } = await resolveWorkspaceBranchContext("admin");
+  const { data, error } = await supabase.rpc("admin_customer_directory_for_branch", {
+    p_branch_id: branchContext.selectedBranchId,
     p_kind: parsed.data.kind,
     p_query: parsed.data.q,
     p_page: parsed.data.page,
@@ -26,17 +29,18 @@ export async function readCustomerDirectory(search: SearchParams = {}) {
   return {
     data: data as unknown as { customers: NonNullable<AdminData["customers"]>; total: number; page: number; timezone: string },
     filters: parsed.data,
+    branchContext,
   };
 }
 
 /** Read the complete service list through the existing MFA-protected admin catalog RPC. */
-export async function readHomeServiceStatus(supabase: Awaited<ReturnType<typeof requireArea>>["supabase"]) {
+export async function readHomeServiceStatus(supabase: Awaited<ReturnType<typeof requireArea>>["supabase"], branchId: string | null = null) {
   const services: { active: boolean; published: boolean; supports_home_service: boolean; category_id?: string | null }[] = [];
   let categories: { id: string; active: boolean; published: boolean }[] = [];
   let business: AdminData["business"] = null;
   let total = 0;
   for (let page = 1; page <= 10000; page += 1) {
-    const { data, error } = await supabase.rpc("catalog_data", { p_kind: "services", p_page: page });
+    const { data, error } = await supabase.rpc("catalog_data_for_branch", { p_kind: "services", p_branch_id: branchId, p_page: page });
     if (error || !data || typeof data !== "object" || Array.isArray(data)) throw new Error("Home Service status could not be loaded.");
     const result = data as unknown as { business: AdminData["business"]; total: number; services: typeof services; categories: typeof categories };
     business = result.business;
@@ -45,17 +49,35 @@ export async function readHomeServiceStatus(supabase: Awaited<ReturnType<typeof 
     services.push(...(result.services ?? []));
     if (services.length >= total || !result.services?.length) break;
   }
-  return deriveHomeServiceStatus(business, services, categories);
+  const branchQuery = supabase.from("branches").select("home_service_enabled");
+  const { data: branches, error: branchError } = branchId ? await branchQuery.eq("id", branchId) : await branchQuery;
+  if (branchError) throw new Error("Home Service setting could not be loaded.");
+  return deriveHomeServiceStatus({ ...business, home_service_enabled: (branches ?? []).some(branch => branch.home_service_enabled) }, services, categories);
 }
 
-export async function readAdmin(section: "dashboard"|"settings"|"closures"|"announcements"|"appointments"|"appointment"|"calendar"|"customers"|"customer"|"payments"|"reports", search: SearchParams = {}, id?: string) {
-  const { supabase } = await requireArea("admin");
+async function readAdminUncached(section: "dashboard"|"settings"|"closures"|"announcements"|"appointments"|"appointment"|"calendar"|"customers"|"customer"|"payments"|"reports", search: SearchParams = {}, id?: string) {
+  const { supabase, branchContext, principal } = await resolveWorkspaceBranchContext("admin");
   const parsed = filtersSchema.safeParse({ q: search.q, status: search.status, date: search.date, page: search.page });
   if (!parsed.success) throw new Error("Invalid search filters. Clear the filters and try again.");
   const filters = parsed.data;
-  const { data, error } = await supabase.rpc("admin_data", { p_section: section, p_id: id ? z.uuid().parse(id) : undefined, p_date: filters.date || undefined, p_status: filters.status, p_query: filters.q, p_page: filters.page });
+  const { data, error } = await supabase.rpc("admin_data_for_branch", {
+    p_section: section, p_branch_id: branchContext.selectedBranchId,
+    p_id: id ? z.uuid().parse(id) : null, p_date: filters.date || null,
+    p_status: filters.status, p_query: filters.q, p_page: filters.page,
+  });
   if (error || !data || typeof data !== "object" || Array.isArray(data)) throw new Error("Business information could not be loaded. Please try again.");
   const adminData = data as unknown as AdminData;
+  if (section === "reports") {
+    const { data: trend, error: trendError } = await supabase.rpc("admin_financial_metrics_for_branch", {
+      p_branch_id: branchContext.selectedBranchId,
+    });
+    if (trendError || !Array.isArray(trend)) {
+      adminData.financial_trend = [];
+      adminData.financial_trend_unavailable = true;
+    } else {
+      adminData.financial_trend = trend as unknown as NonNullable<AdminData["financial_trend"]>;
+    }
+  }
   if (section === "payments" && adminData.payments?.length) {
     const payments = adminData.payments;
     const paymentIds = payments.map((payment) => payment.id);
@@ -95,5 +117,9 @@ export async function readAdmin(section: "dashboard"|"settings"|"closures"|"anno
       for(const list of lists)for(let i=0;i<list.length;i++)list[i]={...list[i],home_location:map.get(list[i].id)??null};
     }
   }
-  return { data: adminData, filters, supabase };
+  return { data: adminData, filters, supabase, branchContext, principal };
 }
+
+// The admin layout and its dashboard both request this projection during one
+// render. React cache avoids repeating that authorized RPC within the request.
+export const readAdmin = cache(readAdminUncached);

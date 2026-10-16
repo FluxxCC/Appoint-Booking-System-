@@ -3,7 +3,7 @@
 import { useActionState, useId, useState } from "react";
 import type { FormState } from "@/features/auth/schemas";
 
-export type FormField = { name: string; label: string; type?: string; autoComplete?: string; required?: boolean; hint?: string; value?: string; maxLength?: number };
+export type FormField = { name: string; label: string; type?: string; autoComplete?: string; required?: boolean; hint?: string; value?: string; minLength?: number; maxLength?: number };
 
 function InputField({ field, errors, prefix }: { field: FormField; errors?: string[]; prefix: string }) {
   const [visible, setVisible] = useState(false);
@@ -15,7 +15,7 @@ function InputField({ field, errors, prefix }: { field: FormField; errors?: stri
     <div className="relative">
       <input id={inputId} name={field.name} type={password && visible ? "text" : field.type ?? "text"}
         autoComplete={field.autoComplete} required={field.required ?? true} defaultValue={field.value}
-        maxLength={field.maxLength} aria-invalid={!!errors?.length} aria-describedby={field.hint || errors?.length ? hintId : undefined}
+        minLength={field.minLength} maxLength={field.maxLength} aria-invalid={!!errors?.length} aria-describedby={field.hint || errors?.length ? hintId : undefined}
         className={`field-control text-base ${password ? "pr-20" : ""}`} />
       {password && <button type="button" aria-label={visible ? "Hide password" : "Show password"} aria-pressed={visible}
         className="absolute inset-y-0 right-3 text-sm font-medium text-accent-dark" onClick={() => setVisible(!visible)}>{visible ? "Hide" : "Show"}</button>}

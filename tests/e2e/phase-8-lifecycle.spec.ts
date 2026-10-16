@@ -11,7 +11,7 @@ async function bookAsGuest(page: Page) {
   await page.locator('input[name="staffChoice"]').last().check();
   await page.getByRole("button", { name: "Continue" }).click();
   await page.getByLabel("Appointment date").fill(futureDate());
-  await page.getByRole("button", { name: "Continue" }).click();
+  await expect(page.getByRole("button", { name: "10:00 AM" })).toBeVisible();
   await page.getByRole("button", { name: "10:00 AM" }).click();
   await page.getByRole("button", { name: "Continue" }).click();
   await page.getByLabel("Full name").fill("Phase Eight Guest");
@@ -85,6 +85,8 @@ test("assigned staff approves in staff mode", async ({ page, browser, request })
   const id=await bookAsGuest(page);
   const staff=await actorPage(browser,"staff@example.test","e2e-staff-passphrase","/staff/login");
   await staff.page.goto("/staff");
+  await expect(staff.page.getByRole("link", { name: /Review requests/ })).toBeVisible();
+  await staff.page.getByRole("link", { name: /Review requests/ }).click();
   await expect(staff.page.getByText("Your pending requests")).toBeVisible();
   await staff.page.getByRole("button",{name:"Accept request"}).click();
   await expect(staff.page.getByText("No requests assigned to you.")).toBeVisible();

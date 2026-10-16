@@ -16,22 +16,15 @@ OWNER and ADMIN currently both require AAL2 to enter `/admin` and execute privil
 
 `business_settings.booking_approval_mode` supports `ADMIN_APPROVAL`, `STAFF_APPROVAL`, and `AUTO_CONFIRM`; it defaults to `ADMIN_APPROVAL`. The current record lifecycle and availability checks were not changed. Phase 8 must consume this policy when implementing booking acceptance/decline; until then the value is descriptive preparation and does not enable automatic confirmation or a new staff workflow.
 
-## Transactional email with Resend
+## Email delivery
 
-`src/server/email/` contains a server-only sender, validated message types and a structured result. It sends only from server code, accepts one validated recipient, uses an optional idempotency key, and does not log message bodies or provider responses. Missing configuration returns `not_configured`; network/provider failures return safe machine-readable outcomes. Delivery is not triggered yet by booking automation.
-
-Set these server-only environment values when app transactional email is ready:
-
-- `RESEND_API_KEY`
-- `RESEND_FROM_EMAIL` (an address on a domain verified with Resend)
-
-Never prefix these values with `NEXT_PUBLIC_`. Do not put credentials in source control, templates, client components, or database rows. The current app environment has no Resend credentials configured, so the sender intentionally declines delivery.
+The application does not send booking, payment, staff-operation, or guest-recovery emails. Customer and business email addresses remain profile/contact data. Supabase Auth separately sends account verification, password recovery, and invitation messages through its SMTP configuration.
 
 ## Supabase Auth email delivery
 
-Supabase Auth continues to own identities, passwords, sessions, MFA and invitation/recovery flows. Resend only delivers email. To use Resend for Auth messages, configure Supabase project's **Authentication → SMTP Settings** with Resend SMTP after verifying the sending domain. Use `smtp.resend.com`, port `465` (TLS) or `587` (STARTTLS), username `resend`, and a Resend API key as the SMTP password. Keep the secret only in Supabase SMTP settings. Preserve the existing confirmation, invitation and recovery redirect templates (`/auth/confirm`, `/auth/callback`, and `/reset-password`) and test each in the development project before relying on delivery. This project’s Supabase-side SMTP configuration was not changed by the migration.
+Supabase Auth owns identities, passwords, sessions, MFA and invitation/recovery flows. To enable Auth messages, configure an SMTP service in the project's **Authentication → SMTP Settings** and keep its credentials in Supabase. Preserve the existing confirmation, invitation and recovery redirect templates (`/auth/confirm`, `/auth/callback`, and `/reset-password`) and test each in the development project before relying on delivery. This project’s Supabase-side SMTP configuration was not changed by the migration.
 
-The app invitation actions continue to call Supabase Auth; configuring the app's Resend API sender alone does not configure Auth invitations. Without Auth SMTP delivery, onboarding responds with a safe error instead of asking an owner to share or store a password.
+The app invitation actions continue to call Supabase Auth. Without Auth SMTP delivery, onboarding responds with a safe error instead of asking an owner to share or store a password.
 
 ## Other environment dependencies
 

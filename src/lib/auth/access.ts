@@ -38,6 +38,17 @@ export function safeAppointmentDestination(value: string | null | undefined): st
   if (!value || value.length > 512 || !value.startsWith("/") || value.startsWith("//") || /[\\\u0000-\u001f\u007f]/.test(value)) return null;
   const match = new RegExp(`^/account/appointments/(${idPattern})$`, "i").exec(value);
   if (match) return `/account/appointments/${match[1]}`;
+  if (value.startsWith("/account/book?")) {
+    const query = new URLSearchParams(value.slice("/account/book?".length));
+    if ([...query.keys()].some(key => !["branch", "service", "staff", "home"].includes(key))) return null;
+    if (["branch", "service", "staff", "home"].some(key => query.getAll(key).length > 1)) return null;
+    if (query.get("home") !== "1") return null;
+    for (const key of ["branch", "service", "staff"]) {
+      const entry = query.get(key);
+      if (entry && !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(entry)) return null;
+    }
+    return `/account/book?${query}`;
+  }
   const admin = new RegExp(`^/admin/appointments/(${idPattern})$`, "i").exec(value);
   if (admin) return `/admin/appointments/${admin[1]}`;
   const staff = new RegExp(`^/staff/appointments\\?focus=(${idPattern})#appointment-(${idPattern})$`, "i").exec(value);

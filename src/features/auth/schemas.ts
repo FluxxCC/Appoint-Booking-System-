@@ -3,7 +3,7 @@ import { z } from "zod";
 export const emailSchema = z.email("Enter a valid email address.").trim().max(254);
 export const nameSchema = z.string().trim().min(2, "Enter your full name.").max(200);
 export const phoneSchema = z.string().trim().regex(/^$|^\+?[0-9 ()-]{7,25}$/, "Enter a valid mobile number.");
-export const passwordSchema = z.string().min(12, "Use at least 12 characters.").max(128, "Use no more than 128 characters.");
+export const passwordSchema = z.string().min(8, "Use at least 8 characters.").max(128, "Use no more than 128 characters.");
 export const registrationSchema = z.object({ fullName: nameSchema, email: emailSchema, password: passwordSchema, phone: phoneSchema }).strict();
 export const loginSchema = z.object({ email: emailSchema, password: z.string().min(1, "Enter your password.").max(128) });
 export const resetSchema = z.object({ password: passwordSchema, confirmPassword: z.string() })

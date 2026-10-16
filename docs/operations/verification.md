@@ -16,10 +16,10 @@ PGlite runs single-session PostgreSQL, not a mock SQL parser. The auth schema in
 
 ## Not implemented in this phase
 
-- Full public website, booking UI, dashboards, auth screens and appearance editor.
+- Full public website, booking UI, dashboards and auth screens.
 - Guest verification/management endpoint, rate limiting and token exchange.
 - Provider checkout/signature verification, external refunds and automatic late-payment reacquisition.
-- Scheduler, outbox worker, retries/leases, email/SMS and operational alerts.
+- Payment-expiration scheduler and payment reconciliation.
 - Atomic rescheduling; immutable intervals prevent ad hoc changes until its dedicated command exists.
 - Multi-service, overnight/multi-day and resource-capacity appointments.
 - Owner-transfer UI, account suspension command and retention/pseudonymization workflow.

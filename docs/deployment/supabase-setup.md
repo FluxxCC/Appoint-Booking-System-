@@ -72,12 +72,12 @@ Offline types are derived from migrated database columns/enums/RPCs, not handwri
 
 Never derive this UUID or role from editable signup metadata. No default password or sample owner is seeded. Later STAFF linking and ADMIN invitations/grants/revocations are OWNER-only, MFA-protected application workflows. ADMIN activation waits for confirmed email. Direct browser writes to privileged roles are revoked. Ownership transfer is future work; the database protects the last usable owner.
 
-4. Provision one business_settings row, one website_settings row, a published booking_policy_versions row, business hours, staff accounts/roles, services, staff_services and staff working hours. Use explicit business-approved values. Publication defaults to false. Policy rows are append-only: create the next version instead of editing an existing one.
+4. Provision one business_settings row, a published booking_policy_versions row, business hours, staff accounts/roles, services, staff_services and staff working hours. Use explicit business-approved values. Publication defaults to false. Policy rows are append-only: create the next version instead of editing an existing one.
 5. Configure Auth site/redirect URLs, email confirmation, SMTP, MFA and abuse controls for the deployment. Guest anonymous Auth signups are not part of this architecture.
 6. Configure private/public Storage buckets and validated upload policies only when the upload feature is implemented. No upload access is currently granted.
 
 ## Later integrations
 
-The future backend must schedule `expire_due_payments` periodically, implement durable outbox delivery and payment reconciliation, and validate provider facts before `record_verified_payment`. No scheduler or gateway is deployed now. Acceptance/request RPCs perform opportunistic expiration in the meantime.
+The future backend must schedule `expire_due_payments` periodically, implement payment reconciliation, and validate provider facts before `record_verified_payment`. No scheduler or gateway is deployed now. Acceptance/request RPCs perform opportunistic expiration in the meantime.
 
 Approval-required payments must use the stored amount, currency and deadline after acceptance. Checkout should be created only after the acceptance transaction commits. A cancelled/expired pending provider checkout must be invalidated where supported; late funds remain a reconciliation exception. Never confirm from the browser redirect.

@@ -1,11 +1,15 @@
 "use client";
+import {useActionState} from "react";
 import {Form, type Field} from "@/features/admin/forms";
 import Image from "next/image";
 import {saveCategory,saveService,saveStaff,assignServices,saveException,removeException} from "./actions";
 import {saveImage} from "./image-actions";
 import {minorToInput} from "./schemas";
 import type {CatalogData,Category,Service,Staff} from "./types";
-const flag=(name:string,label:string,value:boolean):Field=>({name,label,type:"checkbox",value});
+import type {FormState} from "@/features/auth/schemas";
+import {saveBranchServiceAction,saveStaffBranchAssignmentAction,setBranchHomeServiceAction} from "@/features/branches/actions";
+const flag=(name:string,label:string,value:boolean,hint?:string,fullWidth?:boolean,showWhen?:Field["showWhen"]):Field=>({name,label,type:"checkbox",value,hint,fullWidth,showWhen});
+function ActionFeedback({state}:{state:FormState}){return <>{state.error&&<p role="alert" className="mt-3 rounded-xl bg-danger-soft p-3 text-sm text-danger">{state.error}</p>}{state.success&&<p role="status" className="mt-3 rounded-xl bg-success-soft p-3 text-sm text-success">{state.success}</p>}</>;}
 export function CategoryForm({row,sortOrder=0}:{row?:Category;sortOrder?:number}){return <Form action={saveCategory} hidden={{id:row?.id??"",slug:row?.slug??"",sort_order:String(row?.sort_order??sortOrder)}} submit={row?"Save category":"Create category"} fields={[
  {name:"name",label:"Category name",value:row?.name,required:true,maxLength:200},
  flag("active","Active",row?.active??true),flag("published","Visible to customers",row?.published??false)]}>
@@ -13,26 +17,59 @@ export function CategoryForm({row,sortOrder=0}:{row?:Category;sortOrder?:number}
  </Form>;}
 export function ServiceForm({data,row}:{data:CatalogData;row?:Service}){
  const currency=data.business?.currency??"PHP";
- return <Form action={saveService} hidden={{id:row?.id??""}} fields={[
- {section:"Service details",sectionHint:"How this service appears in the customer catalog.",name:"name",label:"Service name",value:row?.name,required:true},
- {name:"slug",label:"URL name",value:row?.slug,required:true},
+ const amountDigits=new Intl.NumberFormat("en",{style:"currency",currency}).resolvedOptions().maximumFractionDigits??2;
+ const amountStep=amountDigits===0?"1":`0.${"0".repeat(amountDigits-1)}1`;
+ return <Form action={saveService} hidden={{id:row?.id??""}} submit={row?"Save service changes":"Create service"} advancedTitle="Booking and availability options" advancedHint="Payment, locations, time between bookings, and customer visibility." fields={[
+ {section:"Service details",sectionHint:"Add the information customers need to choose this service.",name:"name",label:"Service name",value:row?.name,required:true},
+ {name:"slug",label:"Service URL name",value:row?.slug,required:true,hint:"Lowercase words separated by hyphens, such as signature-haircut."},
  {name:"category_id",label:"Category",value:row?.category_id??"",options:[{value:"",label:"Uncategorized"},...data.categories.map(c=>({value:c.id,label:c.name}))]},
- {name:"description",label:"Description",type:"textarea",value:row?.description??"",maxLength:4000},
- {section:"Appointment time and price",sectionHint:"The booking time includes the service duration and its buffers.",name:"duration_minutes",label:"Service duration (minutes)",type:"number",value:row?.duration_minutes??30,min:1,max:1440,required:true},
- {name:"price",label:`Price (${currency})`,value:minorToInput(row?.price_amount??0,currency),required:true},
- {name:"buffer_before_minutes",label:"Buffer before (minutes)",type:"number",value:row?.buffer_before_minutes??data.business?.default_buffer_minutes??0,min:0,max:240,required:true,hint:"Preparation time reserved before the customer’s appointment."},
- {name:"buffer_after_minutes",label:"Buffer after (minutes)",type:"number",value:row?.buffer_after_minutes??data.business?.default_buffer_minutes??0,min:0,max:240,required:true,hint:"Cleanup or transition time reserved after the appointment."},
- {section:"Payment",sectionHint:"Payment is requested only after the booking is accepted.",name:"payment_mode",label:"Payment requirement",value:row?.payment_mode??"PAY_AT_BUSINESS",options:[{value:"PAY_AT_BUSINESS",label:"Pay at business"},{value:"DEPOSIT",label:"Deposit"},{value:"FULL_PAYMENT",label:"Full payment"}]},
- {name:"deposit_type",label:"Deposit calculation",value:row?.deposit_type??"FIXED",options:[{value:"FIXED",label:`Fixed amount (${currency})`},{value:"PERCENTAGE",label:"Percentage"}]},
- {name:"deposit",label:"Deposit amount or percentage",value:row?.deposit_type==="PERCENTAGE"?String((row.deposit_percent_bps??0)/100):minorToInput(row?.deposit_amount??0,currency),hint:"Used only for deposits. Percentages allow two decimals and round up to the smallest currency unit."},
- {section:"Appointment location",sectionHint:"Customers can choose from the locations enabled for this service.",...flag("supports_business_location","At business",row?.supports_business_location??true)},
- flag("supports_home_service","Home Service",row?.supports_home_service??false),
- {section:"Home Service settings",sectionHint:"The fee is added to the service price. Travel time is reserved around the appointment.",name:"home_service_fee",label:`Home Service fee (${currency})`,value:minorToInput(row?.home_service_fee??0,currency),required:true},
- {name:"home_travel_before_minutes",label:"Travel time before appointment (minutes)",type:"number",value:row?.home_travel_before_minutes??0,min:0,max:240,required:true},
- {name:"home_travel_after_minutes",label:"Travel time after appointment (minutes)",type:"number",value:row?.home_travel_after_minutes??0,min:0,max:240,required:true},
- {section:"Availability and visibility",sectionHint:"Control whether this service can be booked and displayed publicly.",...flag("active","Active (clear to archive)",row?.active??true)},
- flag("published","Published",row?.published??false)
- ]}><p className="rounded-xl bg-canvas p-4 text-sm leading-6 text-muted">Existing appointment prices, locations and travel buffers remain unchanged when you edit this service. Home Service bookings require a registered customer account.</p></Form>;
+ {name:"description",label:"Description",type:"textarea",value:row?.description??"",maxLength:4000,hint:"Shown on the public service page."},
+ {section:"Price and appointment length",sectionHint:"The appointment length sets how long the customer’s booking occupies the schedule.",name:"duration_minutes",label:"Appointment length (minutes)",type:"number",value:row?.duration_minutes??30,min:1,max:1440,required:true},
+ {name:"price",label:`Service price (${currency})`,type:"number",value:minorToInput(row?.price_amount??0,currency),min:0,step:amountStep,required:true},
+ ]} advancedFields={[
+ {section:"Payment",sectionHint:"Payment is requested only after the booking is accepted.",name:"payment_mode",label:"When should the customer pay?",value:row?.payment_mode??"PAY_AT_BUSINESS",options:[{value:"PAY_AT_BUSINESS",label:"Pay at the business"},{value:"DEPOSIT",label:"Pay a deposit"},{value:"FULL_PAYMENT",label:"Pay in full"}]},
+ {name:"deposit_type",label:"Deposit calculation",value:row?.deposit_type??"FIXED",options:[{value:"FIXED",label:`Fixed amount (${currency})`},{value:"PERCENTAGE",label:"Percentage of price"}],showWhen:{name:"payment_mode",value:"DEPOSIT"}},
+ {name:"deposit",label:"Deposit amount or percentage",type:"number",value:row?.deposit_type==="PERCENTAGE"?String((row.deposit_percent_bps??0)/100):minorToInput(row?.deposit_amount??0,currency),min:0,step:row?.deposit_type==="PERCENTAGE"?"0.01":amountStep,hint:"For a percentage, enter 0.01–100. For a fixed deposit, enter an amount in the business currency.",showWhen:{name:"payment_mode",value:"DEPOSIT"}},
+ {section:"Appointment location",sectionHint:"Choose where customers can receive this service.",...flag("supports_business_location","At the business",row?.supports_business_location??true,"Customers visit your shop or studio.",false)},
+ flag("supports_home_service","Home Service",row?.supports_home_service??false,"A staff member visits the customer’s address.",false),
+ {section:"Home Service fee and travel time",sectionHint:"These settings appear only when Home Service is enabled. The fee is added to the service price.",name:"home_service_fee",label:`Home Service fee (${currency})`,type:"number",value:minorToInput(row?.home_service_fee??0,currency),min:0,step:amountStep,required:true,showWhen:{name:"supports_home_service",value:true}},
+ {name:"home_travel_before_minutes",label:"Travel before (minutes)",type:"number",value:row?.home_travel_before_minutes??0,min:0,max:240,required:true,hint:"Reserved before the appointment starts.",showWhen:{name:"supports_home_service",value:true}},
+ {name:"home_travel_after_minutes",label:"Travel after (minutes)",type:"number",value:row?.home_travel_after_minutes??0,min:0,max:240,required:true,hint:"Reserved after the appointment ends.",showWhen:{name:"supports_home_service",value:true}},
+ {section:"Time between appointments",sectionHint:"Reserve preparation and cleanup time around each booking.",name:"buffer_before_minutes",label:"Preparation time before (minutes)",type:"number",value:row?.buffer_before_minutes??data.business?.default_buffer_minutes??0,min:0,max:240,required:true},
+ {name:"buffer_after_minutes",label:"Cleanup time after (minutes)",type:"number",value:row?.buffer_after_minutes??data.business?.default_buffer_minutes??0,min:0,max:240,required:true},
+ {section:"Customer visibility",sectionHint:"Choose whether this service can be booked and listed publicly.",...flag("active","Available for booking",row?.active??true,"Clear this to archive the service.",false)},
+ flag("published","Show in public catalog",row?.published??false,"Only published services appear on the customer website.",false)
+ ]}><p className="rounded-xl bg-canvas p-4 text-sm leading-6 text-muted">Home Service bookings use the address customers enter when booking. Changes apply to new bookings; existing appointment details stay as booked.</p></Form>;
+}
+export function BranchHomeServiceControl({branchId,branchName,enabled,isOwner}:{branchId:string;branchName:string;enabled:boolean;isOwner:boolean}){
+ const [state,action,pending]=useActionState(setBranchHomeServiceAction,{});
+ if(!isOwner)return <div className="rounded-xl border border-line bg-canvas/60 p-4"><p className="font-medium text-ink">Home Service is {enabled?"on":"off"} for {branchName}.</p><p className="mt-1 text-sm text-muted">The owner controls whether customers can request Home Service at this branch.</p></div>;
+ return <form action={action} className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-line bg-canvas/60 p-4">
+  <input type="hidden" name="branch_id" value={branchId}/><input type="hidden" name="enabled" value={String(!enabled)}/>
+  <div className="min-w-0"><p className="font-semibold text-ink">Customer Home Service requests</p><p className="mt-1 max-w-3xl text-sm leading-6 text-muted">{enabled?`Home Service is available at ${branchName}. Customers provide their own visit destination in each booking.`:`Home Service is off at ${branchName}. Customers cannot select it for new bookings.`}</p><ActionFeedback state={state}/></div>
+  <button disabled={pending} className={`min-h-11 shrink-0 rounded-full px-5 font-semibold text-white disabled:opacity-50 ${enabled?"bg-ink":"bg-accent"}`}>{pending?"Saving…":enabled?"Turn off":"Turn on"}</button>
+ </form>;
+}
+export function BranchServiceOfferingForm({branchId,branchName,service,offer,currency,isOwner}:{branchId:string;branchName:string;service:Service;offer?:NonNullable<CatalogData["branch_offerings"]>[number];currency:string;isOwner:boolean}){
+ const [state,action,pending]=useActionState(saveBranchServiceAction,{});
+ if(!isOwner)return <p className="rounded-xl border border-line bg-canvas/60 p-4 text-sm leading-6 text-muted">This service is {offer?.active?"offered":"not offered"} at {branchName}. The owner manages branch-specific availability and pricing.</p>;
+ return <form action={action} className="grid gap-4 rounded-xl border border-line bg-canvas/60 p-4 sm:grid-cols-[minmax(0,1fr)_minmax(150px,220px)_minmax(150px,220px)_auto] sm:items-end">
+  <input type="hidden" name="branch_id" value={branchId}/><input type="hidden" name="service_id" value={service.id}/>
+  <div className="min-w-0"><p className="font-semibold text-ink">{branchName}</p><p className="mt-1 text-sm text-muted">Set where this service can be booked and its price at this branch.</p></div>
+  <label className="text-sm font-medium text-ink">Branch availability<select name="active" defaultValue={String(offer?.active??false)} className="field-control mt-1.5"><option value="false">Not offered</option><option value="true">Offered</option></select></label>
+  <label className="text-sm font-medium text-ink">Branch price ({currency})<input name="price_override" type="number" min="0" step="0.01" defaultValue={offer?.price_override==null?"":minorToInput(offer.price_override,currency)} placeholder={`Use ${minorToInput(service.price_amount,currency)} base price`} className="field-control mt-1.5"/><span className="mt-1 block text-xs font-normal text-muted">Leave blank to use the service price.</span></label>
+  <button disabled={pending} className="button-secondary min-h-11 px-4 disabled:opacity-50">{pending?"Saving…":"Save branch service"}</button>
+  <div className="sm:col-span-4"><ActionFeedback state={state}/></div>
+ </form>;
+}
+export function StaffBranchAssignmentControl({branchId,branchName,staffId,active,isOwner}:{branchId:string;branchName:string;staffId:string;active:boolean;isOwner:boolean}){
+ const [state,action,pending]=useActionState(saveStaffBranchAssignmentAction,{});
+ if(!isOwner)return <p className="rounded-xl border border-line bg-canvas/60 p-4 text-sm text-muted">This profile is {active?"assigned":"not assigned"} to {branchName}. Ask the owner to change branch eligibility.</p>;
+ return <form action={action} className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-line bg-canvas/60 p-4">
+  <input type="hidden" name="branch_id" value={branchId}/><input type="hidden" name="target_id" value={staffId}/><input type="hidden" name="active" value={String(!active)}/>
+  <div><p className="font-medium text-ink">{branchName}</p><p className="mt-1 text-sm text-muted">{active?"This staff member can be assigned to appointments at this branch.":"This staff member is not eligible for appointments at this branch."}</p><ActionFeedback state={state}/></div>
+  <button disabled={pending} className={`min-h-11 rounded-xl border px-4 py-2 text-sm font-semibold disabled:opacity-50 ${active?"border-danger/30 text-danger hover:bg-danger-soft":"border-line text-accent-dark hover:bg-accent-soft"}`}>{pending?"Saving…":active?"Remove from branch":"Assign to branch"}</button>
+ </form>;
 }
 export function StaffForm({row}:{row?:Staff}){return <Form action={saveStaff} hidden={{id:row?.id??"",slug:row?.slug??""}} fields={[
  {section:"Staff details",sectionHint:"Keep private account details separate from the public profile.",name:"full_name",label:"Full name (private)",value:row?.full_name??row?.display_name,required:true},

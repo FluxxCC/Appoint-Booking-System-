@@ -14,7 +14,7 @@ export async function inviteAdminAction(_state: FormState, form: FormData): Prom
 
   try {
     const { data, error } = await createPrivilegedClient().auth.admin.inviteUserByEmail(parsed.data, {
-      redirectTo: `${siteUrl()}/auth/confirm`,
+      redirectTo: `${siteUrl()}/auth/confirm?portal=admin`,
     });
     if (error || !data.user) return { error: "The invitation could not be sent. Existing accounts can be granted ADMIN after their email is confirmed by entering their Auth user UUID below." };
 
@@ -25,7 +25,7 @@ export async function inviteAdminAction(_state: FormState, form: FormData): Prom
     revalidatePath("/admin/access");
     return { success: "Invitation sent. ADMIN access remains inactive until the recipient confirms their email and an owner activates the account." };
   } catch {
-    return { error: "ADMIN invitations are unavailable. Check the server-only Supabase secret, site URL and email delivery configuration." };
+    return { error: "ADMIN invitations are unavailable. Check the server-only Supabase secret, site URL and Supabase Auth email configuration." };
   }
 }
 

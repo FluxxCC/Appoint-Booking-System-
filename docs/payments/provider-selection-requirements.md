@@ -28,7 +28,7 @@ For each candidate, record the date and link to current official documentation f
 4. Only raw, authenticated provider events (or a separately authenticated provider status lookup) can reach the service-role payment verifier. Browser return parameters are display hints only.
 5. Provider/event identity is deduplicated. Payment verification and appointment transition stay transactional. Out-of-order non-success events must never reverse a verified success.
 6. A payment received after reservation expiry is recorded for manual review; it never restores the expired appointment or takes a slot that another booking acquired.
-7. Refunds are recorded against a succeeded payment, bounded by the remaining refundable amount, and later sent through an idempotent provider adapter. Resend delivery is an after-commit notification and never part of payment correctness.
+7. Refunds are recorded against a succeeded payment, bounded by the remaining refundable amount, and later sent through an idempotent provider adapter. Email delivery is outside the payment lifecycle.
 
 ## Later operational work
 

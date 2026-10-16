@@ -8,7 +8,7 @@ The connected Supabase project has not received Phase 5 or 6 migrations yet. Rec
 
 ## Phase 7 application status
 
-The public business website and customer booking flow are implemented using a safe database projection and the Phase 6 availability engine. `/book` supports registered customers and configurable guest booking, Any Available Staff, business-local dates, availability-backed times, review, and PENDING request submission. PostgreSQL revalidates each request under the schedule lock, derives service/payment snapshots, creates the event, and keeps PENDING non-blocking. Guest viewing requires an expiring token whose hash is stored in PostgreSQL and whose secret is held in an HttpOnly cookie; UUIDs alone do not grant access. `/account` and customer appointment detail/list routes show only the signed-in customer's data. Guest recovery and transactional booking/payment email use the server-only Resend layer and durable notification outbox; details are in `docs/deployment/email-architecture.md`.
+The public business website and customer booking flow are implemented using a safe database projection and the Phase 6 availability engine. `/book` supports registered customers and configurable guest booking, Any Available Staff, business-local dates, availability-backed times, review, and PENDING request submission. PostgreSQL revalidates each request under the schedule lock, derives service/payment snapshots, creates the event, and keeps PENDING non-blocking. Guest viewing requires an expiring token whose hash is stored in PostgreSQL and whose secret is held in an HttpOnly cookie; UUIDs alone do not grant access. `/account` and customer appointment detail/list routes show only the signed-in customer's data. Supabase Auth handles account verification, recovery, and invitations; the application does not send booking or payment emails.
 
 ## Phase 4 application status
 
@@ -94,7 +94,7 @@ Acceptance rechecks active staff/service eligibility, notice window, working hou
 
 The customer interface must explain that submission is a request, not a reservation. A losing competing request remains PENDING and cannot pay; staff must decline it or arrange a different time.
 
-`occupied_range` is computed by a database trigger as `[starts_at - before_buffer, ends_at + after_buffer)`. A partial GiST exclusion constraint compares staff UUID equality and range overlap. Half-open ranges permit exact adjacency. Pending records are excluded from the constraint; accepting one acquires the reservation atomically. A conflicting acceptance rolls back completely, including audit/outbox events.
+`occupied_range` is computed by a database trigger as `[starts_at - before_buffer, ends_at + after_buffer)`. A partial GiST exclusion constraint compares staff UUID equality and range overlap. Half-open ranges permit exact adjacency. Pending records are excluded from the constraint; accepting one acquires the reservation atomically. A conflicting acceptance rolls back completely, including audit events.
 
 A transaction-scoped advisory lock serializes schedule writes, requests, acceptance, payment verification and expiry for this single business. Statement triggers acquire it before row locks. Hours/closure changes revalidate existing active reservations and reject invalidation; the business must resolve affected appointments first. This is deliberately coarse and safe for the initial business scale. Optimize only after measuring contention.
 
@@ -108,11 +108,11 @@ Auth users have profiles, optional role assignments, an optional customer identi
 
 All 25 requested tables are implemented:
 
-- Business/content: business_settings, booking_policy_versions, website_settings, announcements.
+- Business/content: business_settings, booking_policy_versions, announcements.
 - Identity/catalog: profiles, user_roles, customers, staff, service_categories, services, staff_services.
 - Scheduling: business_hours, staff_working_hours, staff_schedule_exceptions, business_closures.
 - Appointments: appointments, appointment_items, appointment_events, appointment_notes, guest_access_tokens.
-- Finance/operations: payments, refunds, payment_events, notification_outbox, audit_logs.
+- Finance/operations: payments, refunds, payment_events, audit_logs.
 
 Every table has a UUID primary key, created_at, updated_at and RLS. Financial amounts are integer minor units constrained to JavaScript's safe integer range. Foreign keys restrict deletion of referenced business history. Policy versions, appointment items, events and audit logs are immutable. UTC instants and IANA timezone settings replace server-local time assumptions. Changing the operating currency/timezone after bookings exist requires an explicit data migration.
 
@@ -124,7 +124,7 @@ Creating a pending payment record requires acceptance; an awaiting-payment attem
 
 Provider events are unique by provider/event ID. Successful payments are immutable, and repeat delivery is idempotent. A verified payment confirms only a live reservation before its deadline. A late payment after expiry/cancellation records the money, adds a payment exception and durable notification, and never resurrects the appointment. Automatic reacquisition/refund is deferred to gateway integration: the safe Phase 2 fallback is manual reconciliation. Pending and successful refunds reserve refundable balance under a lock, preventing excess refunds. No funds move in this phase.
 
-The outbox is written in the same transaction as appointment state changes. The protected dispatcher route leases and dispatches jobs after commit through the server-only Resend API client, with idempotency keys, safe error categories, bounded retries and no rollback of booking/payment facts. Vercel Hobby hosts the application; an external scheduler must call the dispatcher with `CRON_SECRET` for asynchronous and retry processing. Supabase Auth continues to own confirmation, recovery and invite tokens; configure its SMTP separately as documented in `docs/deployment/email-architecture.md`. Reports must distinguish cash receipts, deposits, service revenue, refunds and outstanding balances.
+Reports must distinguish cash receipts, deposits, service revenue, refunds and outstanding balances. Supabase Auth owns confirmation, recovery and invite messages and uses its separately configured SMTP service.
 
 ## Major routes
 
@@ -136,7 +136,7 @@ Customer routes: `/account`, `/account/profile`, `/account/appointments`, `/acco
 
 Staff routes: `/staff`, `/staff/calendar`, `/staff/appointments/[id]`, `/staff/availability`, `/staff/profile`.
 
-Admin routes: `/admin`, `/admin/calendar`, `/admin/appointments`, `/admin/appointments/[id]`, `/admin/customers`, `/admin/customers/[id]`, `/admin/services`, `/admin/staff`, `/admin/payments`, `/admin/refunds`, `/admin/reports`, `/admin/availability`, `/admin/closures`, `/admin/announcements`, `/admin/appearance`, `/admin/settings`, `/admin/audit-log`.
+Admin routes: `/admin`, `/admin/calendar`, `/admin/appointments`, `/admin/appointments/[id]`, `/admin/customers`, `/admin/customers/[id]`, `/admin/services`, `/admin/staff`, `/admin/payments`, `/admin/refunds`, `/admin/reports`, `/admin/availability`, `/admin/closures`, `/admin/announcements`, `/admin/settings`, `/admin/audit-log`.
 
 Implemented public interfaces: `/api/availability` and the `/book` server action. Future APIs: `/api/webhooks/payments/[provider]`, `/api/jobs/[job]`.
 
@@ -161,11 +161,11 @@ docs/{architecture,deployment,operations}/
 
 ## Security principles and operational boundary
 
-RLS is enabled on every exposed table. Routine clients retain user credentials; the secret-key client is isolated with `server-only`, disables session persistence, and is unused by customer/staff application services. Direct appointment/payment mutations are not granted to authenticated users, including admins. Owner/admin permissions are live role checks with MFA. Public catalog fields contain no secrets. Guest hashes, provider payloads and outbox records have no browser access.
+RLS is enabled on every exposed table. Routine clients retain user credentials; the secret-key client is isolated with `server-only`, disables session persistence, and is unused by customer/staff application services. Direct appointment/payment mutations are not granted to authenticated users, including admins. Owner/admin permissions are live role checks with MFA. Public catalog fields contain no secrets. Guest access hashes have no browser access.
 
 Proxy refreshes cookies but never substitutes for authorization. Protected actions verify identity and rely on database permissions again. Private responses are not shared-cacheable. Every future endpoint needs input validation, bounded requests, authorization and appropriate CSRF/origin protection. Public content sanitization, upload type/size enforcement and storage policies must precede those interfaces. No Storage bucket is opened by these migrations.
 
-Before production: verify RLS against managed Supabase, real concurrent sessions and payment retries; configure Auth redirects, SMTP, MFA and rate limiting; implement job delivery/reconciliation; test backups/restores and asset recovery; add monitoring, retention and deletion/pseudonymization workflows. Existing restrictive history foreign keys intentionally prevent casual destructive deletion.
+Before production: verify RLS against managed Supabase, real concurrent sessions and payment retries; configure Auth redirects, SMTP, MFA and rate limiting; implement payment-expiration scheduling and reconciliation; test backups/restores and asset recovery; add monitoring, retention and deletion/pseudonymization workflows. Existing restrictive history foreign keys intentionally prevent casual destructive deletion.
 
 ## Documentation references checked during implementation
 

@@ -8,6 +8,12 @@ export function navigationUrl(location:NormalizedLocation,provider:"google"|"ope
   :`https://www.openstreetmap.org/?mlat=${encodeURIComponent(String(location.latitude))}&mlon=${encodeURIComponent(String(location.longitude))}#map=17/${encodeURIComponent(String(location.latitude))}/${encodeURIComponent(String(location.longitude))}`;
 }
 
+export function directionsUrl(destination: NormalizedLocation, origin?: NormalizedLocation) {
+ const params = new URLSearchParams({ api: "1", destination: `${destination.latitude},${destination.longitude}`, travelmode: "driving" });
+ if (origin) params.set("origin", `${origin.latitude},${origin.longitude}`);
+ return `https://www.google.com/maps/dir/?${params.toString()}`;
+}
+
 /** A provider-hosted map preview with a marker; no map credentials or location proxy are used. */
 export function previewUrl(location:NormalizedLocation){
  const lat=location.latitude,lon=location.longitude,span=0.006;

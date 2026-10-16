@@ -12,7 +12,11 @@ const save=v=>scalar('select public.admin_save_settings($1)',[JSON.stringify(v)]
 const values={name:'Studio',description:'Test business',contact_email:'studio@example.test',contact_phone:'',address:'',timezone:'Asia/Manila',currency:'PHP',scheduling_interval_minutes:15,default_buffer_minutes:0,require_staff_approval:true,guest_booking_enabled:true,customer_registration_enabled:true,payment_window_minutes:30,minimum_notice_minutes:0,maximum_advance_days:90,terms:'Test terms',expected_updated_at:''};
 try {
  for(const name of ['owner','admin','customerUser','otherUser','staffUser']) await db.query('insert into auth.users(id,email) values($1,$2)',[ids[name],`${name}@example.test`]);
- await db.query("insert into public.user_roles(auth_user_id,role) values($1,'OWNER'),($2,'ADMIN'),($3,'STAFF')",[ids.owner,ids.admin,ids.staffUser]);
+ await actor('service_role');
+ await db.query("insert into public.user_roles(auth_user_id,role) values($1,'OWNER'),($2,'STAFF')",[ids.owner,ids.staffUser]);
+ await actor('authenticated',ids.owner,'aal2');
+ await db.query("select public.manage_owner_admins('grant',$1,null)",[ids.admin]);
+ await scalar('select public.admin_save_settings($1)',[JSON.stringify(values)]);
  await actor('anon');
  await denied('anonymous cannot read admin data','select public.admin_data($1)',['dashboard']);
  equal('registration defaults enabled',await scalar('select public.registration_enabled()'),true);
@@ -25,8 +29,9 @@ try {
  }
  await actor('authenticated',ids.admin,'aal2');
  equal('empty dashboard uses zero', (await read('dashboard')).stats.today,0);
- await save(values);
- let data=await read('settings');equal('settings persisted',data.business.name,'Studio');equal('first policy published',data.policy.version,1);equal('legacy settings save receives refund policy default',data.business.refund_policy.startsWith('Refund requests are reviewed individually'),true);
+ let data=await read('settings');
+ await save({...values,expected_updated_at:data.expected_updated_at});
+ data=await read('settings');equal('settings persisted',data.business.name,'Studio');equal('first policy published',data.policy.version,1);equal('legacy settings save receives refund policy default',data.business.refund_policy.startsWith('Refund requests are reviewed individually'),true);
  await denied('stale settings rejected','select public.admin_save_settings($1)',[JSON.stringify(values)],/reload/);
  await save({...values,expected_updated_at:data.expected_updated_at,payment_window_minutes:45});
  data=await read('settings');equal('policy version advanced',data.policy.version,2);equal('legacy settings save preserves refund policy',data.business.refund_policy.startsWith('Refund requests are reviewed individually'),true);
@@ -45,6 +50,7 @@ try {
  equal('full-day ends at next local midnight',new Date(closure.ends_at).toISOString(),'2030-10-02T16:00:00.000Z');
  await scalar("select public.admin_save_closure('2030-10-03',false,'13:00','15:00','Partial')");
  equal('partial closure stored',(await read('closures')).total,2);
+ await db.query('update public.business_settings set published=true');
  await scalar("select public.admin_save_announcement(null,'Holiday','Announcement text',true,null,null)");
  let announcement=(await read('announcements')).announcements[0];
  await actor('anon');equal('published announcement visible',await scalar('select count(*)::int from public.announcements'),1);
@@ -52,6 +58,7 @@ try {
  await scalar('select public.admin_save_announcement($1,$2,$3,false,null,null)',[announcement.id,'Updated','Updated body']);
  await actor('anon');equal('unpublished announcement hidden',await scalar('select count(*)::int from public.announcements'),0);
  await actor('authenticated',ids.owner,'aal2');
+ await db.query('update public.business_settings set published=false');
  await denied('invalid display order rejected',"select public.admin_save_announcement(null,'Title','Body',true,'2030-01-02','2030-01-01')");
  // DST behavior is tested before appointments lock the timezone.
  data=await read('settings');await save({...values,timezone:'America/New_York',expected_updated_at:data.expected_updated_at});
@@ -70,6 +77,7 @@ try {
  await db.exec('commit');
  equal('Auth invitation can finish before deferred registration check',await scalar('select count(*)::int from auth.users where id=$1',[invited]),1);
  await actor('service_role');
+ await db.query('update public.business_settings set published=true');
  await db.query("insert into public.staff(id,auth_user_id,display_name,slug,published,bookable) values($1,$2,'Barber','barber',true,true)",[ids.staff,ids.staffUser]);
  await db.query("insert into public.customers(id,auth_user_id,display_name,email) values($1,$2,'Customer','customer@example.test'),($3,$4,'Other','other@example.test')",[ids.customer,ids.customerUser,ids.otherCustomer,ids.otherUser]);
  await db.query("insert into public.services(id,name,slug,price_amount,duration_minutes,payment_mode,published) values($1,'Cut','cut',2000,30,'PAY_AT_BUSINESS',true)",[ids.service]);

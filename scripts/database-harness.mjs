@@ -3,7 +3,7 @@ import { btree_gist } from "@electric-sql/pglite/contrib/btree_gist";
 import { pgcrypto } from "@electric-sql/pglite/contrib/pgcrypto";
 import { readdir, readFile } from "node:fs/promises";
 
-export async function createDatabase() {
+export async function createDatabase({ stopBeforeMigration = null } = {}) {
   const db = new PGlite({ extensions: { btree_gist, pgcrypto } });
   // Test-only Supabase identity shim; production uses the real managed auth schema.
   await db.exec(`
@@ -36,6 +36,7 @@ export async function createDatabase() {
     grant all on all tables in schema storage to service_role;
   `);
   for (const file of (await readdir('supabase/migrations')).filter(x => x.endsWith('.sql')).sort()) {
+    if (file === stopBeforeMigration) break;
     try { await db.exec(await readFile(`supabase/migrations/${file}`, 'utf8')); }
     catch (error) { console.error(`Migration failed: ${file}: ${error.message}`); throw error; }
   }

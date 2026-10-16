@@ -1,6 +1,45 @@
 // Generated from migrations by scripts/generate-foundation-types.mjs. Do not edit.
 export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
 export type Database = { public: { Tables: {
+  admin_branch_memberships: {
+    Row: {
+      id: string;
+      auth_user_id: string;
+      branch_id: string;
+      active: boolean;
+      granted_by: string | null;
+      granted_at: string;
+      revoked_by: string | null;
+      revoked_at: string | null;
+      created_at: string;
+      updated_at: string;
+    };
+    Insert: {
+      id?: string;
+      auth_user_id: string;
+      branch_id: string;
+      active?: boolean;
+      granted_by?: string | null;
+      granted_at?: string;
+      revoked_by?: string | null;
+      revoked_at?: string | null;
+      created_at?: string;
+      updated_at?: string;
+    };
+    Update: {
+      id?: string;
+      auth_user_id?: string;
+      branch_id?: string;
+      active?: boolean;
+      granted_by?: string | null;
+      granted_at?: string;
+      revoked_by?: string | null;
+      revoked_at?: string | null;
+      created_at?: string;
+      updated_at?: string;
+    };
+    Relationships: [];
+  };
   announcements: {
     Row: {
       id: string;
@@ -68,9 +107,36 @@ export type Database = { public: { Tables: {
     Relationships: [];
   };
   appointment_home_locations: {
-    Row: { appointment_id: string; address: string; latitude: number; longitude: number; landmark: string | null; instructions: string | null; area_hint: string; created_at: string };
-    Insert: { appointment_id: string; address: string; latitude: number; longitude: number; landmark?: string | null; instructions?: string | null; area_hint: string; created_at?: string };
-    Update: { appointment_id?: string; address?: string; latitude?: number; longitude?: number; landmark?: string | null; instructions?: string | null; area_hint?: string; created_at?: string };
+    Row: {
+      appointment_id: string;
+      address: string;
+      latitude: number;
+      longitude: number;
+      landmark: string | null;
+      instructions: string | null;
+      area_hint: string;
+      created_at: string;
+    };
+    Insert: {
+      appointment_id: string;
+      address: string;
+      latitude: number;
+      longitude: number;
+      landmark?: string | null;
+      instructions?: string | null;
+      area_hint: string;
+      created_at?: string;
+    };
+    Update: {
+      appointment_id?: string;
+      address?: string;
+      latitude?: number;
+      longitude?: number;
+      landmark?: string | null;
+      instructions?: string | null;
+      area_hint?: string;
+      created_at?: string;
+    };
     Relationships: [];
   };
   appointment_items: {
@@ -177,6 +243,7 @@ export type Database = { public: { Tables: {
       home_travel_before_snapshot: number;
       home_travel_after_snapshot: number;
       service_area_hint: string | null;
+      branch_id: string;
     };
     Insert: {
       id?: string;
@@ -212,6 +279,7 @@ export type Database = { public: { Tables: {
       home_travel_before_snapshot?: number;
       home_travel_after_snapshot?: number;
       service_area_hint?: string | null;
+      branch_id: string;
     };
     Update: {
       id?: string;
@@ -247,6 +315,7 @@ export type Database = { public: { Tables: {
       home_travel_before_snapshot?: number;
       home_travel_after_snapshot?: number;
       service_area_hint?: string | null;
+      branch_id?: string;
     };
     Relationships: [];
   };
@@ -260,6 +329,7 @@ export type Database = { public: { Tables: {
       details: Json;
       created_at: string;
       updated_at: string;
+      branch_id: string | null;
     };
     Insert: {
       id?: string;
@@ -270,6 +340,7 @@ export type Database = { public: { Tables: {
       details?: Json;
       created_at?: string;
       updated_at?: string;
+      branch_id?: string | null;
     };
     Update: {
       id?: string;
@@ -280,6 +351,7 @@ export type Database = { public: { Tables: {
       details?: Json;
       created_at?: string;
       updated_at?: string;
+      branch_id?: string | null;
     };
     Relationships: [];
   };
@@ -296,6 +368,7 @@ export type Database = { public: { Tables: {
       published: boolean;
       created_at: string;
       updated_at: string;
+      branch_id: string;
     };
     Insert: {
       id?: string;
@@ -309,6 +382,7 @@ export type Database = { public: { Tables: {
       published?: boolean;
       created_at?: string;
       updated_at?: string;
+      branch_id: string;
     };
     Update: {
       id?: string;
@@ -322,6 +396,133 @@ export type Database = { public: { Tables: {
       published?: boolean;
       created_at?: string;
       updated_at?: string;
+      branch_id?: string;
+    };
+    Relationships: [];
+  };
+  branch_booking_settings: {
+    Row: {
+      branch_id: string;
+      approval_mode: string;
+      updated_at: string;
+    };
+    Insert: {
+      branch_id: string;
+      approval_mode?: string;
+      updated_at?: string;
+    };
+    Update: {
+      branch_id?: string;
+      approval_mode?: string;
+      updated_at?: string;
+    };
+    Relationships: [];
+  };
+  branch_services: {
+    Row: {
+      branch_id: string;
+      service_id: string;
+      active: boolean;
+      price_override: number | null;
+      payment_mode_override: Database["public"]["Enums"]["payment_mode"] | null;
+      deposit_type_override: string | null;
+      deposit_amount_override: number | null;
+      deposit_percent_bps_override: number | null;
+      home_service_fee_override: number | null;
+      home_travel_before_minutes_override: number | null;
+      home_travel_after_minutes_override: number | null;
+      created_at: string;
+      updated_at: string;
+    };
+    Insert: {
+      branch_id: string;
+      service_id: string;
+      active?: boolean;
+      price_override?: number | null;
+      payment_mode_override?: Database["public"]["Enums"]["payment_mode"] | null;
+      deposit_type_override?: string | null;
+      deposit_amount_override?: number | null;
+      deposit_percent_bps_override?: number | null;
+      home_service_fee_override?: number | null;
+      home_travel_before_minutes_override?: number | null;
+      home_travel_after_minutes_override?: number | null;
+      created_at?: string;
+      updated_at?: string;
+    };
+    Update: {
+      branch_id?: string;
+      service_id?: string;
+      active?: boolean;
+      price_override?: number | null;
+      payment_mode_override?: Database["public"]["Enums"]["payment_mode"] | null;
+      deposit_type_override?: string | null;
+      deposit_amount_override?: number | null;
+      deposit_percent_bps_override?: number | null;
+      home_service_fee_override?: number | null;
+      home_travel_before_minutes_override?: number | null;
+      home_travel_after_minutes_override?: number | null;
+      created_at?: string;
+      updated_at?: string;
+    };
+    Relationships: [];
+  };
+  branches: {
+    Row: {
+      home_service_enabled: boolean;
+      id: string;
+      name: string;
+      slug: string;
+      is_default: boolean;
+      is_active: boolean;
+      public_visible: boolean;
+      booking_enabled: boolean;
+      address: string | null;
+      contact_email: string | null;
+      contact_phone: string | null;
+      timezone: string;
+      service_origin_latitude: number | null;
+      service_origin_longitude: number | null;
+      home_service_max_radius_km: number | null;
+      created_at: string;
+      updated_at: string;
+    };
+    Insert: {
+      home_service_enabled?: boolean;
+      id?: string;
+      name: string;
+      slug: string;
+      is_default?: boolean;
+      is_active?: boolean;
+      public_visible?: boolean;
+      booking_enabled?: boolean;
+      address?: string | null;
+      contact_email?: string | null;
+      contact_phone?: string | null;
+      timezone?: string;
+      service_origin_latitude?: number | null;
+      service_origin_longitude?: number | null;
+      home_service_max_radius_km?: number | null;
+      created_at?: string;
+      updated_at?: string;
+    };
+    Update: {
+      home_service_enabled?: boolean;
+      id?: string;
+      name?: string;
+      slug?: string;
+      is_default?: boolean;
+      is_active?: boolean;
+      public_visible?: boolean;
+      booking_enabled?: boolean;
+      address?: string | null;
+      contact_email?: string | null;
+      contact_phone?: string | null;
+      timezone?: string;
+      service_origin_latitude?: number | null;
+      service_origin_longitude?: number | null;
+      home_service_max_radius_km?: number | null;
+      created_at?: string;
+      updated_at?: string;
     };
     Relationships: [];
   };
@@ -333,6 +534,7 @@ export type Database = { public: { Tables: {
       public_reason: string;
       created_at: string;
       updated_at: string;
+      branch_id: string;
     };
     Insert: {
       id?: string;
@@ -341,6 +543,7 @@ export type Database = { public: { Tables: {
       public_reason: string;
       created_at?: string;
       updated_at?: string;
+      branch_id: string;
     };
     Update: {
       id?: string;
@@ -349,6 +552,7 @@ export type Database = { public: { Tables: {
       public_reason?: string;
       created_at?: string;
       updated_at?: string;
+      branch_id?: string;
     };
     Relationships: [];
   };
@@ -360,6 +564,7 @@ export type Database = { public: { Tables: {
       closes_at: string;
       created_at: string;
       updated_at: string;
+      branch_id: string;
     };
     Insert: {
       id?: string;
@@ -368,6 +573,7 @@ export type Database = { public: { Tables: {
       closes_at: string;
       created_at?: string;
       updated_at?: string;
+      branch_id: string;
     };
     Update: {
       id?: string;
@@ -376,6 +582,7 @@ export type Database = { public: { Tables: {
       closes_at?: string;
       created_at?: string;
       updated_at?: string;
+      branch_id?: string;
     };
     Relationships: [];
   };
@@ -518,63 +725,6 @@ export type Database = { public: { Tables: {
       created_at?: string;
       updated_at?: string;
     };
-    Relationships: [];
-  };
-  notification_outbox: {
-    Row: {
-      id: string;
-      appointment_id: string | null;
-      kind: string;
-      deduplication_key: string;
-      payload: Json;
-      state: Database["public"]["Enums"]["job_state"];
-      attempts: number;
-      available_at: string;
-      locked_until: string | null;
-      last_error: string | null;
-      delivered_at: string | null;
-      last_attempt_at: string | null;
-      created_at: string;
-      updated_at: string;
-    };
-    Insert: {
-      id?: string;
-      appointment_id?: string | null;
-      kind: string;
-      deduplication_key: string;
-      payload?: Json;
-      state?: Database["public"]["Enums"]["job_state"];
-      attempts?: number;
-      available_at?: string;
-      locked_until?: string | null;
-      last_error?: string | null;
-      delivered_at?: string | null;
-      last_attempt_at?: string | null;
-      created_at?: string;
-      updated_at?: string;
-    };
-    Update: {
-      id?: string;
-      appointment_id?: string | null;
-      kind?: string;
-      deduplication_key?: string;
-      payload?: Json;
-      state?: Database["public"]["Enums"]["job_state"];
-      attempts?: number;
-      available_at?: string;
-      locked_until?: string | null;
-      last_error?: string | null;
-      delivered_at?: string | null;
-      last_attempt_at?: string | null;
-      created_at?: string;
-      updated_at?: string;
-    };
-    Relationships: [];
-  };
-  notification_delivery_receipts: {
-    Row: { id: string; outbox_id: string; idempotency_key: string; recipient_role: string; provider_message_id: string; accepted_at: string };
-    Insert: { id?: string; outbox_id: string; idempotency_key: string; recipient_role: string; provider_message_id: string; accepted_at?: string };
-    Update: { id?: string; outbox_id?: string; idempotency_key?: string; recipient_role?: string; provider_message_id?: string; accepted_at?: string };
     Relationships: [];
   };
   payment_events: {
@@ -886,6 +1036,45 @@ export type Database = { public: { Tables: {
     };
     Relationships: [];
   };
+  staff_branch_assignments: {
+    Row: {
+      id: string;
+      staff_id: string;
+      branch_id: string;
+      active: boolean;
+      assigned_by: string | null;
+      assigned_at: string;
+      revoked_by: string | null;
+      revoked_at: string | null;
+      created_at: string;
+      updated_at: string;
+    };
+    Insert: {
+      id?: string;
+      staff_id: string;
+      branch_id: string;
+      active?: boolean;
+      assigned_by?: string | null;
+      assigned_at?: string;
+      revoked_by?: string | null;
+      revoked_at?: string | null;
+      created_at?: string;
+      updated_at?: string;
+    };
+    Update: {
+      id?: string;
+      staff_id?: string;
+      branch_id?: string;
+      active?: boolean;
+      assigned_by?: string | null;
+      assigned_at?: string;
+      revoked_by?: string | null;
+      revoked_at?: string | null;
+      created_at?: string;
+      updated_at?: string;
+    };
+    Relationships: [];
+  };
   staff_schedule_exceptions: {
     Row: {
       id: string;
@@ -896,6 +1085,8 @@ export type Database = { public: { Tables: {
       reason: string | null;
       created_at: string;
       updated_at: string;
+      branch_id: string | null;
+      is_global: boolean;
     };
     Insert: {
       id?: string;
@@ -906,6 +1097,8 @@ export type Database = { public: { Tables: {
       reason?: string | null;
       created_at?: string;
       updated_at?: string;
+      branch_id?: string | null;
+      is_global?: boolean;
     };
     Update: {
       id?: string;
@@ -916,6 +1109,8 @@ export type Database = { public: { Tables: {
       reason?: string | null;
       created_at?: string;
       updated_at?: string;
+      branch_id?: string | null;
+      is_global?: boolean;
     };
     Relationships: [];
   };
@@ -927,6 +1122,7 @@ export type Database = { public: { Tables: {
       active: boolean;
       created_at: string;
       updated_at: string;
+      branch_id: string;
     };
     Insert: {
       id?: string;
@@ -935,6 +1131,7 @@ export type Database = { public: { Tables: {
       active?: boolean;
       created_at?: string;
       updated_at?: string;
+      branch_id: string;
     };
     Update: {
       id?: string;
@@ -943,6 +1140,7 @@ export type Database = { public: { Tables: {
       active?: boolean;
       created_at?: string;
       updated_at?: string;
+      branch_id?: string;
     };
     Relationships: [];
   };
@@ -955,6 +1153,7 @@ export type Database = { public: { Tables: {
       ends_at: string;
       created_at: string;
       updated_at: string;
+      branch_id: string;
     };
     Insert: {
       id?: string;
@@ -964,6 +1163,7 @@ export type Database = { public: { Tables: {
       ends_at: string;
       created_at?: string;
       updated_at?: string;
+      branch_id: string;
     };
     Update: {
       id?: string;
@@ -973,6 +1173,7 @@ export type Database = { public: { Tables: {
       ends_at?: string;
       created_at?: string;
       updated_at?: string;
+      branch_id?: string;
     };
     Relationships: [];
   };
@@ -1000,45 +1201,6 @@ export type Database = { public: { Tables: {
     };
     Relationships: [];
   };
-  website_settings: {
-    Row: {
-      id: string;
-      singleton: boolean;
-      logo_path: string | null;
-      hero_image_path: string | null;
-      primary_color: string;
-      font_key: string;
-      sections: Json;
-      published: boolean;
-      created_at: string;
-      updated_at: string;
-    };
-    Insert: {
-      id?: string;
-      singleton?: boolean;
-      logo_path?: string | null;
-      hero_image_path?: string | null;
-      primary_color?: string;
-      font_key?: string;
-      sections?: Json;
-      published?: boolean;
-      created_at?: string;
-      updated_at?: string;
-    };
-    Update: {
-      id?: string;
-      singleton?: boolean;
-      logo_path?: string | null;
-      hero_image_path?: string | null;
-      primary_color?: string;
-      font_key?: string;
-      sections?: Json;
-      published?: boolean;
-      created_at?: string;
-      updated_at?: string;
-    };
-    Relationships: [];
-  };
 }; Views: { [_ in never]: never }; Functions: {
 expire_due_payments: { Args: {  }; Returns: number };
 record_verified_payment: { Args: { p_payment: string | null; p_event_id: string | null; p_paid_at: string | null }; Returns: string };
@@ -1049,59 +1211,75 @@ get_access_context: { Args: {  }; Returns: Json };
 complete_customer_profile: { Args: { p_name: string | null; p_phone?: string | null }; Returns: string };
 link_staff_account: { Args: { p_user: string | null; p_name: string | null; p_slug: string | null }; Returns: string };
 admin_availability_for_date: { Args: { p_service: string | null; p_date: string | null; p_staff?: string | null }; Returns: Json };
+admin_availability_for_branch: { Args: { p_branch: string; p_service: string; p_date: string; p_staff?: string | null }; Returns: Json };
 bootstrap_initial_owner: { Args: { p_user: string | null; p_email: string | null }; Returns: undefined };
 admin_save_hours: { Args: { p_intervals: Json | null }; Returns: undefined };
+admin_save_hours_for_branch: { Args: { p_branch: string; p_intervals: Json }; Returns: undefined };
 admin_local_instant: { Args: { p_local: string | null }; Returns: string };
-admin_save_settings: { Args: { p_values: Json | null }; Returns: undefined };
 admin_save_closure: { Args: { p_date: string | null; p_full_day: boolean | null; p_start: string | null; p_end: string | null; p_reason: string | null }; Returns: undefined };
+admin_save_closure_for_branch: { Args: { p_branch: string; p_date: string; p_full_day: boolean; p_start: string | null; p_end: string | null; p_reason: string }; Returns: undefined };
+admin_delete_closure_for_branch: { Args: { p_branch: string; p_id: string }; Returns: boolean };
 admin_save_announcement: { Args: { p_id: string | null; p_title: string | null; p_body: string | null; p_published: boolean | null; p_start: string | null; p_end: string | null }; Returns: undefined };
-admin_data: { Args: { p_section: string | null; p_id?: string | null; p_date?: string | null; p_status?: string | null; p_query?: string | null; p_page?: number | null }; Returns: Json };
 registration_enabled: { Args: {  }; Returns: boolean };
+admin_data: { Args: { p_section: string | null; p_id?: string | null; p_date?: string | null; p_status?: string | null; p_query?: string | null; p_page?: number | null }; Returns: Json };
+admin_data_for_branch: { Args: { p_section: string | null; p_branch_id: string | null; p_id?: string | null; p_date?: string | null; p_status?: string | null; p_query?: string | null; p_page?: number | null }; Returns: Json };
+admin_financial_metrics_for_branch: { Args: { p_branch_id: string | null }; Returns: Json };
+admin_customer_directory_for_branch: { Args: { p_kind: string | null; p_branch_id: string | null; p_query?: string | null; p_page?: number | null }; Returns: Json };
 public_website_data: { Args: {  }; Returns: Json };
+public_booking_data: { Args: { p_branch_slug?: string | null }; Returns: Json };
 catalog_set_image: { Args: { p_kind: string | null; p_id: string | null; p_path: string | null; p_expected: string | null }; Returns: undefined };
 availability_for_date: { Args: { p_service: string | null; p_date: string | null; p_staff?: string | null }; Returns: Json };
 catalog_save_category: { Args: { p_id: string | null; p_values: Json | null }; Returns: string };
-catalog_save_service: { Args: { p_id: string | null; p_values: Json | null; p_currency: string | null }; Returns: string };
 catalog_save_staff: { Args: { p_id: string | null; p_values: Json | null }; Returns: string };
-catalog_assign_services: { Args: { p_staff: string | null; p_services: Json | null }; Returns: undefined };
-catalog_save_staff_hours: { Args: { p_staff: string | null; p_intervals: Json | null }; Returns: undefined };
-catalog_save_exception: { Args: { p_staff: string | null; p_kind: Database["public"]["Enums"]["schedule_exception_kind"] | null; p_start: string | null; p_end: string | null; p_reason: string | null }; Returns: undefined };
 catalog_data: { Args: { p_kind: string | null; p_id?: string | null; p_query?: string | null; p_category?: string | null; p_active?: string | null; p_page?: number | null }; Returns: Json };
+catalog_data_for_branch: { Args: { p_kind: string | null; p_branch_id: string | null; p_id?: string | null; p_query?: string | null; p_category?: string | null; p_active?: string | null; p_page?: number | null }; Returns: Json };
+catalog_assign_services: { Args: { p_staff: string | null; p_services: Json | null }; Returns: undefined };
+catalog_assign_services_for_branch: { Args: { p_branch: string; p_staff: string; p_services: Json }; Returns: undefined };
 my_staff_workspace: { Args: {  }; Returns: Json };
+my_staff_workspace_for_branch: { Args: { p_branch_id?: string | null }; Returns: Json };
+home_service_data_for_branch: { Args: { p_area: string; p_branch_id?: string | null; p_date?: string | null; p_status?: string; p_staff?: string | null; p_page?: number }; Returns: Json };
+owner_delete_empty_branch: { Args: { p_branch: string }; Returns: boolean };
+owner_set_home_service_enabled: { Args: { p_branch: string; p_enabled: boolean }; Returns: boolean };
+home_service_trip_control: { Args: { p_appointment: string; p_action: string; p_latitude?: number | null; p_longitude?: number | null }; Returns: Json };
+home_service_trip_snapshot: { Args: { p_area: string; p_branch_id?: string | null }; Returns: Json };
 public_catalog: { Args: {  }; Returns: Json };
 public_booking_submit: { Args: { p_service: string | null; p_staff: string | null; p_start: string | null; p_request_key: string | null; p_name: string | null; p_email: string | null; p_phone: string | null }; Returns: Json };
 server_public_booking_submit: { Args: { p_service: string | null; p_staff: string | null; p_start: string | null; p_request_key: string | null; p_name: string | null; p_email: string | null; p_phone: string | null; p_auth_user: string | null }; Returns: Json };
-server_home_service_booking_submit: { Args: { p_service: string | null; p_staff: string | null; p_start: string | null; p_request_key: string | null; p_name: string | null; p_email: string | null; p_phone: string | null; p_auth_user: string | null; p_address: string | null; p_latitude: number | null; p_longitude: number | null; p_landmark: string | null; p_instructions: string | null; p_area_hint: string | null }; Returns: Json };
-server_home_service_availability_for_date: { Args: { p_service: string | null; p_date: string | null; p_staff: string | null; p_auth_user: string | null }; Returns: Json };
-admin_save_home_area: { Args: { p_latitude: number | null; p_longitude: number | null; p_radius_km: number | null }; Returns: undefined };
-admin_customer_directory: { Args: { p_kind: string | null; p_query: string | null; p_page: number | null }; Returns: Json };
-catalog_reorder_categories: { Args: { p_category_ids: Json | null }; Returns: undefined };
 owner_staff_access: { Args: {  }; Returns: Json };
-set_booking_approval_mode: { Args: { p_mode: string | null }; Returns: string };
+  owner_save_branch: { Args: { p_branch: string | null; p_expected_updated_at: string | null; p_values: Json | null }; Returns: Json };
 manage_owner_admins: { Args: { p_action: string | null; p_user?: string | null; p_email?: string | null }; Returns: Json };
 server_availability_for_date: { Args: { p_service: string | null; p_date: string | null; p_staff: string | null; p_auth_user: string | null }; Returns: Json };
+server_public_branch_availability: { Args: { p_branch_slug: string; p_service: string; p_date: string; p_staff: string | null; p_auth_user: string | null; p_fulfillment: string; p_latitude: number | null; p_longitude: number | null }; Returns: Json };
+server_public_branch_booking_submit: { Args: { p_branch_slug: string; p_service: string; p_staff: string | null; p_start: string; p_request_key: string; p_name: string; p_email: string | null; p_phone: string | null; p_auth_user: string | null; p_fulfillment: string; p_address: string | null; p_latitude: number | null; p_longitude: number | null; p_landmark: string | null; p_instructions: string | null; p_area_hint: string | null }; Returns: Json };
+customer_appointment_branch_summaries: { Args: { p_appointments: string[] }; Returns: Json };
 guest_appointment_by_token: { Args: { p_token_hash: string | null; p_appointment: string | null }; Returns: Json };
 enable_staff_login: { Args: { p_staff: string | null; p_email: string | null }; Returns: undefined };
 disable_staff_login: { Args: { p_staff: string | null }; Returns: undefined };
 manage_admin_access_by_email: { Args: { p_action: string | null; p_email: string | null }; Returns: Json };
+set_booking_approval_mode: { Args: { p_mode: string | null }; Returns: string };
 prepare_payment_attempt: { Args: { p_appointment: string | null; p_auth_user: string | null; p_guest_token_hash: string | null; p_provider: string | null; p_idempotency_key: string | null }; Returns: Json };
-issue_guest_access_link: { Args: { p_email: string | null; p_reference?: string | null; p_appointment?: string | null }; Returns: Json };
-exchange_guest_access_link: { Args: { p_token_hash: string | null }; Returns: Json };
 attach_payment_checkout: { Args: { p_payment: string | null; p_reference: string | null; p_checkout_url: string | null }; Returns: Json };
 expire_paymongo_checkout_attempt: { Args: { p_payment: string | null; p_reference: string | null }; Returns: Database["public"]["Enums"]["payment_state"] };
-claim_notification_outbox: { Args: { p_limit?: number | null }; Returns: Database["public"]["Tables"]["notification_outbox"]["Row"][] };
-claim_notification_outbox_by_key: { Args: { p_key: string }; Returns: Database["public"]["Tables"]["notification_outbox"]["Row"][] };
-notification_lifecycle_current: { Args: { p_outbox_id: string }; Returns: boolean };
-finish_notification_outbox: { Args: { p_id: string | null; p_success: boolean | null; p_retryable?: boolean | null; p_error_code?: string | null }; Returns: boolean };
-record_notification_delivery: { Args: { p_outbox_id: string | null; p_idempotency_key: string | null; p_recipient_role: string | null; p_provider_message_id: string | null }; Returns: boolean };
-enqueue_guest_access_notification: { Args: { p_email: string | null; p_reference: string | null; p_request_id: string | null }; Returns: boolean };
-owner_notification_outbox: { Args: { p_limit?: number | null }; Returns: { id: string; kind: string; state: Database["public"]["Enums"]["job_state"]; attempts: number; created_at: string; last_attempt_at: string | null; available_at: string; locked_until: string | null; last_error: string | null; delivered_at: string | null; provider_receipts: Json }[] };
-owner_notification_outbox_context: { Args: { p_limit?: number | null }; Returns: { id: string; kind: string; state: Database["public"]["Enums"]["job_state"]; attempts: number; created_at: string; last_attempt_at: string | null; available_at: string; locked_until: string | null; last_error: string | null; delivered_at: string | null; public_reference: string | null; appointment_state: Database["public"]["Enums"]["appointment_state"] | null; event_state: Database["public"]["Enums"]["appointment_state"] | null; provider_receipts: Json }[] };
+server_home_service_booking_submit: { Args: { p_service: string | null; p_staff: string | null; p_start: string | null; p_request_key: string | null; p_name: string | null; p_email: string | null; p_phone: string | null; p_auth_user: string | null; p_address: string | null; p_latitude: number | null; p_longitude: number | null; p_landmark: string | null; p_instructions: string | null; p_area_hint: string | null }; Returns: Json };
+admin_save_settings: { Args: { p_values: Json | null }; Returns: undefined };
+catalog_reorder_categories: { Args: { p_category_ids: string[] | null }; Returns: undefined };
+admin_customer_directory: { Args: { p_kind: string | null; p_query?: string | null; p_page?: number | null }; Returns: Json };
+server_home_service_availability_for_date: { Args: { p_service: string | null; p_date: string | null; p_staff: string | null; p_auth_user: string | null }; Returns: Json };
+catalog_save_service: { Args: { p_id: string | null; p_values: Json | null; p_currency: string | null }; Returns: string };
+admin_save_home_area: { Args: { p_latitude: number | null; p_longitude: number | null; p_radius_km: number | null }; Returns: undefined };
+catalog_save_staff_hours: { Args: { p_staff: string | null; p_intervals: Json | null }; Returns: undefined };
+catalog_save_staff_hours_for_branch: { Args: { p_branch: string; p_staff: string; p_intervals: Json }; Returns: undefined };
+catalog_save_exception: { Args: { p_staff: string | null; p_kind: Database["public"]["Enums"]["schedule_exception_kind"] | null; p_start: string | null; p_end: string | null; p_reason: string | null }; Returns: undefined };
+catalog_save_exception_for_branch: { Args: { p_branch: string; p_staff: string; p_kind: Database["public"]["Enums"]["schedule_exception_kind"]; p_start: string; p_end: string; p_reason: string }; Returns: string };
+catalog_remove_exception_for_branch: { Args: { p_branch: string; p_id: string }; Returns: boolean };
+is_public_branch: { Args: { p_branch: string | null }; Returns: boolean };
+is_public_service_offering: { Args: { p_branch: string | null; p_service: string | null }; Returns: boolean };
+is_public_service: { Args: { p_service: string | null }; Returns: boolean };
+is_public_staff: { Args: { p_staff: string | null }; Returns: boolean };
 }; Enums: {
 app_role: "OWNER" | "ADMIN" | "STAFF";
 appointment_fulfillment_mode: "BUSINESS_LOCATION" | "HOME_SERVICE";
 appointment_state: "PENDING" | "DECLINED" | "ACCEPTED" | "AWAITING_PAYMENT" | "PAYMENT_EXPIRED" | "CONFIRMED" | "CHECKED_IN" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED" | "NO_SHOW";
-job_state: "PENDING" | "PROCESSING" | "DELIVERED" | "FAILED";
 note_visibility: "INTERNAL" | "CUSTOMER";
 payment_mode: "PAY_AT_BUSINESS" | "DEPOSIT" | "FULL_PAYMENT";
 payment_state: "PENDING" | "SUCCEEDED" | "FAILED" | "CANCELLED";

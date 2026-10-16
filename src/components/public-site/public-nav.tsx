@@ -21,6 +21,14 @@ function AccountLinks({ principal, close, compact = false }: { principal: Princi
   if (!principal) return <>
     <Link href="/login" onClick={close} className={compact ? "rounded-lg px-3 py-2 text-sm font-semibold text-accent-dark hover:bg-accent-soft" : "button-secondary min-h-11 w-full"}>Sign in</Link>
     <Link href="/register" onClick={close} className={compact ? "hidden whitespace-nowrap rounded-lg px-3 py-2 text-sm font-semibold text-muted hover:bg-canvas hover:text-ink xl:inline" : "mt-2 block rounded-xl px-3 py-2 text-center text-sm font-semibold text-accent-dark hover:bg-accent-soft"}>Create customer account</Link>
+    <details className={compact ? "relative" : "mt-3 rounded-xl border border-line px-3 py-2"}>
+      <summary className={compact ? "cursor-pointer whitespace-nowrap rounded-lg px-3 py-2 text-sm font-semibold text-muted hover:bg-canvas" : "cursor-pointer text-center text-sm font-semibold text-accent-dark"}>Work sign in</summary>
+      <div className={compact ? "absolute right-0 top-full z-50 mt-2 grid min-w-44 gap-1 rounded-xl border border-line bg-white p-2 shadow-xl" : "mt-3 grid gap-1 border-t border-line pt-2"}>
+        <Link href="/owner/login" onClick={close} className="rounded-lg px-3 py-2 text-sm text-ink hover:bg-canvas">Owner</Link>
+        <Link href="/admin/login" onClick={close} className="rounded-lg px-3 py-2 text-sm text-ink hover:bg-canvas">Administrator</Link>
+        <Link href="/staff/login" onClick={close} className="rounded-lg px-3 py-2 text-sm text-ink hover:bg-canvas">Staff</Link>
+      </div>
+    </details>
   </>;
 
   const accountHref = principal.roles.some(role => role === "OWNER" || role === "ADMIN") ? "/admin" : principal.roles.includes("STAFF") ? "/staff" : "/account";
@@ -31,10 +39,15 @@ function AccountLinks({ principal, close, compact = false }: { principal: Princi
   </>;
 }
 
-function Brand({ name, logo, onClick }: { name: string; logo: string | null; onClick?: () => void }) {
-  return <Link href="/" onClick={onClick} className="flex min-h-11 min-w-0 items-center gap-3 text-lg font-semibold tracking-tight text-ink">
-    {logo ? <Image src={logo} alt="" width={40} height={40} unoptimized className="size-10 shrink-0 rounded-xl object-contain" /> : <span aria-hidden="true" className="grid size-10 shrink-0 place-items-center rounded-xl bg-accent-soft display-type text-2xl text-accent-dark">{name.charAt(0)}</span>}
-    <span className="truncate">{name}</span>
+function Brand({ name, onClick }: { name: string; onClick?: () => void }) {
+  return <Link href="/" onClick={onClick} aria-label={`${name} home`} className="flex min-h-11 min-w-0 items-center gap-2.5 text-ink">
+    <span aria-hidden="true" className="relative size-11 shrink-0 overflow-hidden rounded-lg border border-[#e9e1d5] bg-[#f8f6e8]">
+      <Image src="/images/usteng-barber-shop-mark.png" alt="" fill sizes="88px" className="object-cover" />
+    </span>
+    <span className="flex min-w-0 flex-col items-start leading-none">
+      <Image src="/images/usteng-wordmark-transparent.png" alt="USTENG" width={148} height={44} sizes="(min-width: 1024px) 148px, 128px" className="h-auto w-[128px] shrink-0 object-contain lg:w-[148px]" />
+      <span className="-mt-0.5 pl-1 text-[8px] font-semibold uppercase tracking-[.31em] text-accent-dark">Barber Shop</span>
+    </span>
   </Link>;
 }
 
@@ -51,7 +64,7 @@ function Navigation({ pathname, closeDrawer, mobile = false }: { pathname: strin
   </nav>;
 }
 
-export function PublicNav({ name, logo, principal }: { name: string; logo: string | null; principal: Principal | null }) {
+export function PublicNav({ name, principal }: { name: string; principal: Principal | null }) {
   const pathname = usePathname();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const closeDrawer = () => setDrawerOpen(false);
@@ -63,9 +76,9 @@ export function PublicNav({ name, logo, principal }: { name: string; logo: strin
           <button type="button" aria-label={drawerOpen ? "Close navigation" : "Open navigation"} aria-expanded={drawerOpen} aria-controls="public-navigation-drawer" onClick={() => setDrawerOpen(open => !open)} className="grid size-10 shrink-0 place-items-center rounded-xl border border-line bg-white text-ink hover:bg-canvas">
             {drawerOpen ? <svg viewBox="0 0 24 24" aria-hidden="true" className="size-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="m6 6 12 12M18 6 6 18" /></svg> : <svg viewBox="0 0 24 24" aria-hidden="true" className="size-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 7h16M4 12h16M4 17h16" /></svg>}
           </button>
-          <Brand name={name} logo={logo} />
+          <Brand name={name} />
         </div>
-        <div className="hidden min-w-0 shrink-0 lg:block"><Brand name={name} logo={logo} /></div>
+        <div className="hidden min-w-0 shrink-0 lg:block"><Brand name={name} /></div>
         <div className="hidden min-w-0 flex-1 justify-center lg:flex"><Navigation pathname={pathname} closeDrawer={closeDrawer} /></div>
         <div className="hidden shrink-0 items-center gap-1 lg:flex"><AccountLinks principal={principal} compact /><Link href="/book" className="button-primary min-h-10 whitespace-nowrap px-3 py-2 xl:px-4">Book now</Link></div>
         <div className="flex shrink-0 items-center gap-2 lg:hidden">

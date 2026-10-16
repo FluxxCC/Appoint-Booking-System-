@@ -9,6 +9,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   const safeNext = safeAppointmentDestination(next);
   return <AuthCard title="Customer sign in" description="Sign in to manage your customer account and appointments.">
     {notice === "password-updated" && <p role="status" className="mb-5 text-sm text-accent-dark">Password updated. Sign in with your new password.</p>}
+    {notice === "email-confirmed" && <p role="status" className="mb-5 text-sm text-accent-dark">Email confirmed. Sign in with your password to continue.</p>}
     <AuthForm action={loginAction} submitLabel="Sign in" fields={[
       { name: "email", label: "Email address", type: "email", autoComplete: "email" },
       { name: "password", label: "Password", type: "password", autoComplete: "current-password" },

@@ -47,6 +47,14 @@ describe("workspace authorization", () => {
       expect(safeAppointmentDestination(path)).toBeNull();
     }
   });
+  it("preserves only safe Home Service booking selections after authentication", () => {
+    expect(safeAppointmentDestination("/account/book?branch=main-branch&service=hair-cut&home=1"))
+      .toBe("/account/book?branch=main-branch&service=hair-cut&home=1");
+    for (const path of ["/account/book?home=0", "/account/book?home=1&next=//evil.test",
+      "/account/book?branch=main&branch=other&home=1", "/account/book?branch=%2Fadmin&home=1"]) {
+      expect(safeAppointmentDestination(path)).toBeNull();
+    }
+  });
 });
 
 describe("customer inputs", () => {

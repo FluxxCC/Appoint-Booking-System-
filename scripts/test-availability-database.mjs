@@ -14,7 +14,7 @@ const service=(slug,duration,mode='PAY_AT_BUSINESS',before=0,after=0)=>({name:sl
 try{
  for(const k of ['owner','staffUser','customerUser'])await db.query('insert into auth.users(id,email) values($1,$2)',[ids[k],`${k}@example.test`]);
  await db.query("insert into public.user_roles(auth_user_id,role) values($1,'OWNER'),($2,'STAFF')",[ids.owner,ids.staffUser]);
- await actor('authenticated',ids.owner,'aal2');await scalar('select public.admin_save_settings($1)',[JSON.stringify(business)]);await scalar('select public.admin_save_hours($1)',[JSON.stringify(intervals)]);await scalar("select public.set_booking_approval_mode('STAFF_APPROVAL')");
+ await actor('authenticated',ids.owner,'aal2');await scalar('select public.admin_save_settings($1)',[JSON.stringify(business)]);await db.query('update public.business_settings set published=true');await scalar('select public.admin_save_hours($1)',[JSON.stringify(intervals)]);await scalar("select public.set_booking_approval_mode('STAFF_APPROVAL')");
  const staff=await scalar('select public.catalog_save_staff(null,$1)',[JSON.stringify(profile('john','John'))]);await scalar("select public.link_staff_account($1,'John','john')",[ids.staffUser]);
  const second=await scalar('select public.catalog_save_staff(null,$1)',[JSON.stringify(profile('jane','Jane'))]);
  await scalar('select public.catalog_save_staff_hours($1,$2)',[staff,JSON.stringify([{weekday:1,opens_at:'10:00',closes_at:'16:00'}])]);

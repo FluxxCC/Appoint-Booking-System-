@@ -1,6 +1,6 @@
 # Appointment Business System
 
-A modular Next.js application deployed independently for each business. Phases 1–7 include authentication, admin configuration, service/staff management, scheduling, availability, the public business website, customer appointment requests and guest booking access. Payment integration, notifications and the full appearance editor remain future phases.
+A modular Next.js application deployed independently for each business. It includes authentication, admin configuration, service/staff management, scheduling, availability, the public business website, customer appointment requests and guest booking access. Payment integrations are available as a separate module; Supabase Auth handles account emails.
 
 Booking requires staff acceptance before any deposit or full payment. Pending requests do not reserve time. Acceptance atomically acquires an exclusive staff interval including buffers; payment deadlines release reservations through explicit expiration.
 

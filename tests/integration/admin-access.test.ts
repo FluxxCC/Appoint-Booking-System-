@@ -1,6 +1,7 @@
 import { beforeEach,it,expect,vi } from "vitest";
 const mocks=vi.hoisted(()=>({guard:vi.fn(),rpc:vi.fn(),from:vi.fn()}));
 vi.mock("@/lib/auth/access.server",()=>({requireArea:mocks.guard}));
+vi.mock("@/features/branches/workspace-context.server",()=>({resolveWorkspaceBranchContext:async(area:string)=>({...await mocks.guard(area),branchContext:{branches:[],selectedBranchId:"11111111-1111-4111-8111-111111111111",selectedBranchName:"Main Branch",allLabel:"All branches",selectorVisible:false,unavailable:false,warning:null}})}));
 vi.mock("next/cache",()=>({revalidatePath:vi.fn()}));
 import { readAdmin } from "../../src/features/admin/data.server";
 import { saveSettings,saveHours,saveClosure,saveAnnouncement,deleteClosure,deleteAnnouncement } from "../../src/features/admin/actions";
@@ -18,7 +19,7 @@ it("guards every configuration mutation before parsing or database writes",async
 it("uses the authorized user client and validated filters",async()=>{
   await readAdmin("appointments",{status:"PENDING",q:"Jane",page:"2"});
   expect(mocks.guard).toHaveBeenCalledWith("admin");
-  expect(mocks.rpc).toHaveBeenCalledWith("admin_data",{p_section:"appointments",p_id:undefined,p_date:undefined,p_status:"PENDING",p_query:"Jane",p_page:2});
+  expect(mocks.rpc).toHaveBeenCalledWith("admin_data_for_branch",{p_section:"appointments",p_branch_id:"11111111-1111-4111-8111-111111111111",p_id:null,p_date:null,p_status:"PENDING",p_query:"Jane",p_page:2});
 });
 it("never turns a database failure into fabricated zero statistics",async()=>{
   mocks.rpc.mockResolvedValue({data:null,error:{message:"offline"}});

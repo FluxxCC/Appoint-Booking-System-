@@ -3,8 +3,9 @@ import { redirect } from "next/navigation";
 import { BackButton } from "@/components/ui/back-button";
 import { requireArea } from "@/lib/auth/access.server";
 import { provisionVerifiedCustomer } from "@/features/auth/provision-customer.server";
-import { readPublicWebsite } from "@/features/public-site/data.server";
+import { readPublicBookingData } from "@/features/public-site/data.server";
 import { BookingWizard } from "@/features/public-site/booking-wizard";
+import { PublicBranchPicker } from "@/features/public-site/branch-picker";
 
 function localDate(timeZone: string, date = new Date()) {
   const parts = new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(date);
@@ -12,10 +13,10 @@ function localDate(timeZone: string, date = new Date()) {
   return `${get("year")}-${get("month")}-${get("day")}`;
 }
 
-export default async function AccountBookingPage({ searchParams }: { searchParams: Promise<{ service?: string; staff?: string }> }) {
+export default async function AccountBookingPage({ searchParams }: { searchParams: Promise<{ service?: string; staff?: string; branch?: string; home?: string }> }) {
   const [{ supabase, principal }, site, query] = await Promise.all([
     requireArea("account"),
-    readPublicWebsite(),
+    readPublicBookingData((await searchParams).branch),
     searchParams,
   ]);
 
@@ -36,7 +37,12 @@ export default async function AccountBookingPage({ searchParams }: { searchParam
     </div>;
   }
 
-  const today = localDate(site.business.timezone);
+  if (!site.branch) return <div>
+    <div className="mx-auto max-w-5xl px-4 pt-5 sm:px-6"><BackButton href="/account">Back to account overview</BackButton></div>
+    <PublicBranchPicker site={site} serviceSlug={query.service} account invalidSelection={Boolean(query.branch)} />
+  </div>;
+
+  const today = localDate(site.branch.timezone);
   const advance = site.policy?.maximum_advance_days ?? 90;
   const maxDate = new Date(Date.parse(`${today}T00:00:00Z`) + advance * 86_400_000).toISOString().slice(0, 10);
 
@@ -45,9 +51,11 @@ export default async function AccountBookingPage({ searchParams }: { searchParam
       <BackButton href="/account">Back to account overview</BackButton>
     </div>
     <BookingWizard
-      site={site}
+      site={{ ...site, branch: site.branch! }}
       serviceSlug={query.service}
       staffSlug={query.staff}
+      initialHome={query.home === "1"}
+      homeServiceAllowed={principal.roles.length === 0}
       customer={{ name: customer.display_name, email: principal.email || customer.email || "", phone: customer.phone }}
       today={today}
       maxDate={maxDate}

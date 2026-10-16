@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
 import { BackButton } from "@/components/ui/back-button";
 import type { Metadata } from "next";
 import { readVerifiedUser } from "@/lib/auth/require-user.server";
@@ -29,6 +28,9 @@ type Confirmation = {
   service_name?: string;
   staff_name?: string;
   timezone?: string;
+  branch_slug?: string;
+  branch_name?: string;
+  branch_address?: string | null;
 };
 
 export const metadata: Metadata = { title: "Booking status", robots: { index: false, follow: false } };
@@ -59,18 +61,15 @@ export default async function BookingConfirmation({ searchParams }: { searchPara
   const currency = String(a.currency ?? site.business?.currency ?? "USD");
   const required = Number(a.required_payment_amount ?? 0);
   const mode = a.payment_mode_snapshot ?? a.payment_mode;
-  const emailStatus = accessMethod === "guest" ? (await cookies()).get(`guest_booking_email_${a.id}`)?.value : null;
   return <main className="mx-auto max-w-2xl px-5 py-14 sm:py-20"><div className="surface-card p-6 sm:p-10">
     <p className="eyebrow">Booking status</p>
     <h1 className="mt-3 display-type text-4xl">{a.state === "PENDING" ? "Booking request submitted" : a.state === "CONFIRMED" ? "Booking confirmed" : appointmentStatus(a.state)}</h1>
     <p className="mt-4 leading-7 text-muted">Status: <strong className="text-ink">{appointmentStatus(a.state)}</strong>. {bookingGuidance(a.state)}</p>
-    {accessMethod === "guest" && emailStatus === "sent" && <p className="mt-4 rounded-xl bg-accent-soft p-4 text-sm">We sent a private access link to your booking email. Keep this browser access while your request is pending.</p>}
-    {accessMethod === "guest" && emailStatus === "queued" && <p className="mt-4 rounded-xl bg-accent-soft p-4 text-sm">A private access link is queued for your booking email. Keep this browser access while the message is being sent.</p>}
-    {accessMethod === "guest" && emailStatus === "unavailable" && <p className="mt-4 rounded-xl bg-warning-soft p-4 text-sm">The booking succeeded, but we could not send an email link. Keep this browser access and contact the business if you lose it.</p>}
     <div className="mt-8 rounded-2xl border border-line bg-canvas p-5 sm:p-6">
       <p className="text-xs font-semibold uppercase tracking-wider text-muted">Your reference</p>
       <p className="mt-1 break-all font-mono font-semibold">{a.public_reference ?? a.reference ?? "Reference unavailable"}</p>
       <p className="mt-6 text-lg font-semibold">{a.service_name}</p>
+      {a.branch_name&&<p className="mt-2 text-sm font-medium">{a.branch_name}{a.branch_address?` · ${a.branch_address}`:""}</p>}
       <p className="mt-1 text-sm text-muted">{formatBusinessTime(String(a.starts_at), timeZone)} · {a.staff_name}</p>
       <div className="mt-5 border-t border-line pt-4"><p className="font-semibold">{money(Number(a.total_amount ?? 0), currency)}</p><p className="mt-1 text-sm text-muted">{mode === "PAY_AT_BUSINESS" ? "Pay at the business" : a.state === "AWAITING_PAYMENT" ? `${money(required, currency)} required` : "Payment required only after acceptance"}</p></div>
       {a.state === "AWAITING_PAYMENT" && a.payment_due_at && <p className="mt-2 text-sm text-muted">Payment deadline: {formatBusinessTime(a.payment_due_at, timeZone)}</p>}

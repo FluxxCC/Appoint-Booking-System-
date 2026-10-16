@@ -5,7 +5,7 @@ import { dateSchema } from "./schemas";
 import { label } from "./format";
 import { PageHeading, Pagination, Status, Time, Empty } from "./ui";
 
-type CalendarEntry = { id: string; starts_at: string; state: string; fulfillment_mode: "BUSINESS_LOCATION" | "HOME_SERVICE" };
+type CalendarEntry = { id: string; starts_at: string; state: string; fulfillment_mode: "BUSINESS_LOCATION" | "HOME_SERVICE"; branch_id: string };
 const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 function validMonth(value: unknown): value is string {
@@ -39,7 +39,7 @@ export async function CalendarPage({ search }: { search: SearchParams }) {
   const requestedMonth = validMonth(search.month) ? search.month : undefined;
   const requestedDate = typeof search.date === "string" && dateSchema.safeParse(search.date).success ? search.date : undefined;
   const initialDate = requestedMonth && requestedDate?.slice(0, 7) !== requestedMonth ? `${requestedMonth}-01` : requestedDate ?? (requestedMonth ? `${requestedMonth}-01` : undefined);
-  const { data, supabase } = await readAdmin("calendar", { date: initialDate, page: search.page });
+  const { data, supabase, branchContext } = await readAdmin("calendar", { date: initialDate, page: search.page });
   const date = data.date;
   const month = requestedMonth ?? date.slice(0, 7);
   const zone = data.business?.timezone ?? "UTC";
@@ -55,13 +55,18 @@ export async function CalendarPage({ search }: { search: SearchParams }) {
   const entries: CalendarEntry[] = [];
   if (!dayView) {
     for (let offset = 0; ; offset += 500) {
-      const { data: batch, error } = await supabase.from("appointments")
-        .select("id,starts_at,state,fulfillment_mode")
+      let query = supabase.from("appointments")
+        .select("id,starts_at,state,fulfillment_mode,branch_id")
         .gte("starts_at", rangeStart.toISOString())
         .lt("starts_at", rangeEnd.toISOString())
         .order("starts_at", { ascending: true })
         .order("id", { ascending: true })
         .range(offset, offset + 499);
+      // The calendar month grid is a follow-up read outside the RPC transaction.
+      // Keep it aligned with the currently selected branch; all-branch view still
+      // relies on the caller's existing membership RLS.
+      if (branchContext.selectedBranchId) query = query.eq("branch_id", branchContext.selectedBranchId);
+      const { data: batch, error } = await query;
       if (error) throw new Error("Calendar appointments could not be loaded. Please try again.");
       entries.push(...(batch ?? []));
       if (!batch || batch.length < 500) break;
@@ -89,8 +94,11 @@ export async function CalendarPage({ search }: { search: SearchParams }) {
   const selectedTitle = new Intl.DateTimeFormat("en", { weekday: "long", month: "long", day: "numeric", year: "numeric", timeZone: "UTC" }).format(new Date(`${date}T12:00:00Z`));
   const timeFormat = new Intl.DateTimeFormat("en", { timeZone: zone, hour: "numeric", minute: "2-digit" });
 
+  const selectedBranch = branchContext.branches.find(branch => branch.id === branchContext.selectedBranchId);
+  const branchNames = new Map(branchContext.branches.map(branch => [branch.id, branch.name]));
+  const scopeLabel = selectedBranch?.name ?? branchContext.allLabel;
   return <>
-    <PageHeading title="Calendar" description={dayView ? `Daily schedule · ${zone}. Move between dates or return to the month.` : `Monthly schedule · ${zone}. Select a date to open its appointments.`} />
+    <PageHeading title="Calendar" description={`${scopeLabel} · ${dayView ? `Daily schedule · ${zone}. Move between dates or return to the month.` : `Monthly schedule · ${zone}. Select a date to open its appointments.`}`} />
     {dayView ? <section className="surface-card min-w-0 p-4 sm:p-6" aria-labelledby="calendar-day-title">
       <div className="mb-6 flex flex-col gap-5 border-b border-line pb-5 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0">
@@ -135,7 +143,7 @@ export async function CalendarPage({ search }: { search: SearchParams }) {
               <span className={`inline-flex size-6 items-center justify-center rounded-full text-xs font-semibold sm:size-7 sm:text-sm ${selected ? "bg-accent text-white" : ""}`}>{dayNumber}</span>
               {dayEntries.length > 0 && <><span className="mt-1 hidden truncate text-[10px] font-semibold text-accent-dark sm:block sm:text-xs">{dayEntries.length} booking{dayEntries.length === 1 ? "" : "s"}</span>
                 <span className="mt-1 grid size-5 place-items-center rounded-full bg-accent-soft text-[10px] font-bold text-accent-dark sm:hidden">{dayEntries.length > 9 ? "9+" : dayEntries.length}</span>
-                <span className="hidden space-y-0.5 sm:block">{dayEntries.slice(0, 2).map((entry) => <span key={entry.id} title={`${label(entry.state)}${entry.fulfillment_mode==="HOME_SERVICE"?" · Home Service":""}`} className="block truncate rounded-md bg-canvas px-1.5 py-0.5 text-[10px] text-ink">{timeFormat.format(new Date(entry.starts_at))}{entry.fulfillment_mode==="HOME_SERVICE"&&<span className="ml-1 font-semibold text-accent-dark">· Home</span>}</span>)}</span>
+                <span className="hidden space-y-0.5 sm:block">{dayEntries.slice(0, 2).map((entry) => <span key={entry.id} title={`${label(entry.state)} · ${branchNames.get(entry.branch_id) ?? "Branch"}${entry.fulfillment_mode==="HOME_SERVICE"?" · Home Service":""}`} className="block truncate rounded-md bg-canvas px-1.5 py-0.5 text-[10px] text-ink">{timeFormat.format(new Date(entry.starts_at))}{branchContext.branches.length > 1 && !selectedBranch && <span className="ml-1 text-muted">· {branchNames.get(entry.branch_id) ?? "Branch"}</span>}{entry.fulfillment_mode==="HOME_SERVICE"&&<span className="ml-1 font-semibold text-accent-dark">· Home</span>}</span>)}</span>
                 {dayEntries.length > 2 && <span className="hidden text-[10px] text-muted sm:block">+{dayEntries.length - 2} more</span>}
               </>}
             </Link>

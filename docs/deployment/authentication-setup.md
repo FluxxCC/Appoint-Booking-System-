@@ -34,6 +34,8 @@ Vercel preview deployments need a separate test Supabase project and their own c
    - `/auth/callback`
    - `/auth/callback?next=/reset-password`
    - `/auth/confirm`
+   - `/auth/confirm?portal=admin`
+   - `/auth/confirm?portal=staff`
 5. Configure production SMTP and sender identity. Supabase Auth rate limits apply to signup, login, recovery, resend and MFA; tune them before launch. Test delivery to real recipients in staging. Add provider CAPTCHA/edge abuse controls before exposing public signup to production traffic.
 6. Copy the supplied HTML into the matching hosted Auth email templates:
    - `supabase/templates/confirmation.html` → Confirm signup
@@ -68,7 +70,7 @@ The safer Phase 2 rule is preserved: **only OWNER with MFA can grant roles**. AD
 
 At `/admin/staff`, the owner supplies full name, email and a unique staff URL name. The server checks the current user/roles/MFA, then invokes Supabase's server-only Auth invitation API. A user-authenticated RPC rechecks owner authorization and atomically links the returned Auth UUID, creates the staff row and grants STAFF. No role comes from invitation metadata. New staff are active but unpublished and not bookable until scheduling/catalog setup is done.
 
-The recipient confirms the invitation, sets a password, then signs in to `/staff`. A valid STAFF role also needs an active linked staff record and an active profile. Deactivating either removes protected staff access on the next request.
+The invitation email preserves the server-selected portal through email confirmation and password setup. Staff invitees finish at `/staff/login`. ADMIN invitees finish at `/admin/login`; ADMIN access still waits for owner activation, and the login page explains that pending state. Login authorization comes from live database roles, not the portal query. A valid STAFF role also needs an active linked staff record and an active profile. Deactivating either removes protected staff access on the next request.
 
 Auth invitation delivery and database linking cannot be one transaction. If email delivery succeeds but linking fails, no new staff access is granted by the failed SQL transaction. The owner sees the invited account UUID and can use the separate linking form after verifying it in Supabase. The same form supports a known existing customer account. It is idempotent for an already linked active staff record with the same slug, does not reactivate disabled staff, and rejects OWNER/ADMIN target accounts. An entered UUID identifies the target, never the authorizing actor. No automatic destructive account cleanup is performed.
 
@@ -78,7 +80,9 @@ Phase 4 adds an administrator-controlled registration toggle. The signup action 
 
 Public registration has no role selector. Server validation allowlists name, email, password and optional mobile number. Extra role/user-ID fields never enter the signup request. The existing Auth trigger creates the profile without reading role metadata.
 
-When signup returns a session, a transaction creates/updates the customer's own record from the verified Auth UUID/email. When verification is required, no customer access is granted until verification; the confirmation handler then provisions ordinary customer details. Name/mobile metadata are treated only as validated display input. Existing guest bookings are never claimed merely because an email matches. If initial provisioning cannot finish or an older account lacks details, `/account/setup` provides a retryable profile form.
+When signup returns a session, a transaction creates/updates the customer's own record from the verified Auth UUID/email. When verification is required, no customer access is granted until verification; the confirmation handler then provisions ordinary customer details, signs out the newly confirmed browser session, and sends the customer to `/login`. Name/mobile metadata are treated only as validated display input. Existing guest bookings are never claimed merely because an email matches. If initial provisioning cannot finish or an older account lacks details, `/account/setup` provides a retryable profile form.
+
+Owners are not invited through the application. The initial OWNER is granted through the controlled one-time bootstrap process above; a confirmed OWNER who resets a password is routed to `/owner/login` based on the live role record.
 
 Duplicate-email responses avoid revealing account existence. Sign-in reports unconfirmed email safely, and `/auth/verify-email` can resend confirmation. Recovery emails return a generic response; reset requires a verified authenticated session. Invites and recovery use the same password-setting screen. Successful password changes sign out globally before requiring a fresh login. Existing short-lived access tokens may remain valid until expiration; live role/profile checks still apply on each protected operation.
 

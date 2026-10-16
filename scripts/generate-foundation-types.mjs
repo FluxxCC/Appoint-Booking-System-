@@ -9,6 +9,7 @@ from pg_type t join pg_enum e on e.enumtypid=t.oid join pg_namespace n on n.oid=
 where n.nspname='public' group by t.typname`)).rows;
 const enumNames = new Set(enums.map(x=>x.typname));
 function type(name) {
+  if (name.startsWith('_')) return `${type(name.slice(1))}[]`;
   if (enumNames.has(name)) return `Database["public"]["Enums"]["${name}"]`;
   if (['int2','int4','int8','numeric','float4','float8'].includes(name)) return 'number';
   if (name === 'bool') return 'boolean';
@@ -37,16 +38,19 @@ for (const table of [...new Set(columns.map(x=>x.table_name))]) {
 output += '}; Views: { [_ in never]: never }; Functions: {\n';
 const functions = (await db.query(`select p.proname,p.proargnames,p.proargtypes::oid[] argtypes,p.prorettype::regtype::text return_type,
 p.pronargdefaults from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public'`)).rows;
+const functionReturnOverrides = {};
 for(const fn of functions) {
   const args=[];
-  for(let i=0;i<(fn.proargnames??[]).length;i++) {
+  // proargtypes contains input arguments only; TABLE/OUT columns also appear
+  // in proargnames and must not leak into the generated Args object.
+  for(let i=0;i<fn.argtypes.length;i++) {
     const foundType=(await db.query('select typname from pg_type where oid=$1',[fn.argtypes[i]])).rows[0];
     // PGlite may not expose every built-in/extension argument OID through pg_type.
     const t=foundType?.typname??'text';
     // PostgreSQL routine arguments accept SQL NULL; validators enforce required values.
-    args.push(`${fn.proargnames[i]}${i>=fn.proargnames.length-fn.pronargdefaults?'?':''}: ${type(t)} | null`);
+    args.push(`${fn.proargnames[i]}${i>=fn.argtypes.length-fn.pronargdefaults?'?':''}: ${type(t)} | null`);
   }
-  const returnType = ({integer:'number',boolean:'boolean',text:'string',uuid:'string',void:'undefined'})[fn.return_type] ?? type(fn.return_type.replace('public.',''));
+  const returnType = functionReturnOverrides[fn.proname] ?? ({integer:'number',boolean:'boolean',text:'string',uuid:'string',void:'undefined'})[fn.return_type] ?? type(fn.return_type.replace('public.',''));
   output += `${fn.proname}: { Args: { ${args.join('; ')} }; Returns: ${returnType} };\n`;
 }
 output += '}; Enums: {\n';

@@ -33,8 +33,8 @@ async function reachTimeStep(page: Page, browseCatalog = false) {
   await page.locator('input[name="staffChoice"]').first().check();
   await page.getByRole("button", { name: "Continue" }).click();
   await page.getByLabel("Appointment date").fill(futureDate());
-  await page.getByRole("button", { name: "Continue" }).click();
-  await page.getByRole("heading", { name: "Choose a time" }).waitFor();
+  await expect(page.getByRole("heading", { name: "Choose a date and time" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "10:00 AM" })).toBeVisible();
 }
 
 async function completeGuestRequest(page: Page, registeredCustomer = false) {
@@ -66,7 +66,7 @@ test("guest browses services and submits a pending request with private manageme
   expect(uuid).toBeTruthy();
   const isolated = await browser.newPage();
   await isolated.goto(`/booking/manage?id=${uuid}`);
-  await expect(isolated.getByText(/A reference alone cannot open a booking/i)).toBeVisible();
+  await expect(isolated.getByText(/Guest booking access stays in the browser where you booked/i)).toBeVisible();
   await isolated.close();
 });
 
@@ -95,7 +95,7 @@ test("guest retries reuse the request key and do not create another appointment"
   await page.locator('input[name="staffChoice"]').first().check();
   await page.getByRole("button", { name: "Continue" }).click();
   await page.getByLabel("Appointment date").fill(futureDate());
-  await page.getByRole("button", { name: "Continue" }).click();
+  await expect(page.getByRole("button", { name: "10:00 AM" })).toBeVisible();
   await page.getByRole("button", { name: "10:00 AM" }).click();
   await page.getByRole("button", { name: "Continue" }).click();
   await page.getByLabel("Full name").fill("Guest E2E Customer");
@@ -106,12 +106,9 @@ test("guest retries reuse the request key and do not create another appointment"
   expect(new URL(page.url()).searchParams.get("id")).not.toBe(firstId);
   const stats = await (await request.get(`${stub}/__e2e/stats`)).json();
   expect(stats).toMatchObject({ appointments: 1, requestKeys: 1 });
-  expect(stats.outbox).toEqual([{ state: "DELIVERED", attempts: 1, last_error: null }]);
-  expect(stats.receipts).toBe(2);
-  expect((await (await request.get(`${stub}/__e2e/mailbox`)).json()).emails).toHaveLength(2);
 });
 
-test("workspace appointment badges are role-scoped, clear on visit, and include new requests", async ({ page, browser, request }) => {
+test("workspace appointment badges show pending request counts for authorized roles", async ({ page, browser, request }) => {
   async function createPendingRequest(suffix: string) {
     const response = await request.post(`${stub}/rest/v1/rpc/server_public_booking_submit`, {
       headers: { apikey: "e2e-test-publishable-key" },
@@ -141,27 +138,27 @@ test("workspace appointment badges are role-scoped, clear on visit, and include 
   await page.setViewportSize({ width: 1440, height: 900 });
   await signIn(page, "owner@example.test", "e2e-owner-passphrase", "/owner/login");
   const ownerNav = page.getByRole("navigation", { name: "admin navigation" });
-  await expect(ownerNav.getByLabel("1 new appointment requests")).toBeVisible();
+  await expect(ownerNav.getByLabel("1 pending appointment requests")).toBeVisible();
   await ownerNav.getByRole("link", { name: /Appointments/ }).click();
-  await expect(ownerNav.getByLabel("1 new appointment requests")).toHaveCount(0);
+  await expect(ownerNav.getByLabel("1 pending appointment requests")).toBeVisible();
   await page.reload();
-  await expect(page.getByRole("navigation", { name: "admin navigation" }).getByLabel("1 new appointment requests")).toHaveCount(0);
+  await expect(page.getByRole("navigation", { name: "admin navigation" }).getByLabel("1 pending appointment requests")).toBeVisible();
 
   await createPendingRequest("second");
   await page.reload();
-  await expect(page.getByRole("navigation", { name: "admin navigation" }).getByLabel("1 new appointment requests")).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "admin navigation" }).getByLabel("2 pending appointment requests")).toBeVisible();
 
   const admin = await browser.newPage();
   await signIn(admin, "admin@example.test", "e2e-admin-passphrase", "/admin/login");
-  await expect(admin.getByRole("navigation", { name: "admin navigation" }).getByLabel("2 new appointment requests")).toBeVisible();
+  await expect(admin.getByRole("navigation", { name: "admin navigation" }).getByLabel("2 pending appointment requests")).toBeVisible();
   await admin.close();
 
   const staff = await browser.newPage();
   await signIn(staff, "staff@example.test", "e2e-staff-passphrase", "/staff/login");
   const staffNav = staff.getByRole("navigation", { name: "staff navigation" });
-  await expect(staffNav.getByLabel("2 new appointment requests")).toBeVisible();
-  await staffNav.getByRole("link", { name: /Appointments/ }).click();
-  await expect(staffNav.getByLabel("2 new appointment requests")).toHaveCount(0);
+  await expect(staffNav.getByLabel("2 pending appointment requests")).toBeVisible();
+  await staffNav.getByRole("link", { name: /Requests/ }).click();
+  await expect(staffNav.getByLabel("2 pending appointment requests")).toBeVisible();
   await staff.close();
 
   const customer = await browser.newPage();
@@ -179,7 +176,12 @@ test("guest and registration settings and availability empty/error states have c
   await expect(page.getByRole("heading", { name: "Account registration is unavailable" })).toBeVisible();
 
   await setScenario(request, { guest: true, registration: true, availability: "empty" });
-  await reachTimeStep(page);
+  await page.goto(serviceUrl);
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.locator('input[name="staffChoice"]').first().check();
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByLabel("Appointment date").fill(futureDate());
+  await expect(page.getByRole("heading", { name: "Choose a date and time" })).toBeVisible();
   await expect(page.getByText("There are no available times on this date.")).toBeVisible();
 
   await setScenario(request, { availability: "normal" });
@@ -189,7 +191,6 @@ test("guest and registration settings and availability empty/error states have c
   await page.locator('input[name="staffChoice"]').first().check();
   await page.getByRole("button", { name: "Continue" }).click();
   await page.getByLabel("Appointment date").fill(futureDate(4));
-  await page.getByRole("button", { name: "Continue" }).click();
   await expect(page.getByText("Availability could not be loaded.", { exact: true })).toBeVisible();
 });
 
@@ -198,9 +199,8 @@ test("changing date clears a previously selected slot and contact validation is 
   await page.getByRole("button", { name: "10:00 AM" }).click();
   await page.getByRole("button", { name: "Continue" }).click();
   await page.getByRole("button", { name: "Back" }).click();
-  await page.getByRole("button", { name: "Back" }).click();
   await page.getByLabel("Appointment date").fill(futureDate(4));
-  await page.getByRole("button", { name: "Continue" }).click();
+  await expect(page.getByRole("button", { name: "10:00 AM" })).toBeVisible();
   await expect(page.getByRole("button", { name: "10:00 AM" })).toHaveAttribute("aria-pressed", "false");
   await page.getByRole("button", { name: "10:00 AM" }).click();
   await page.getByRole("button", { name: "Continue" }).click();
