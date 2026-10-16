@@ -42,7 +42,7 @@ Vercel preview deployments need a separate test Supabase project and their own c
    - `supabase/templates/recovery.html` → Reset password
    - `supabase/templates/invite.html` → Invite user
 
-The templates use `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=...`. This supports invitations and cross-browser email use without relying on URL-fragment sessions. A confirmation page requires a deliberate POST before consuming the token, avoiding email-scanner GET consumption. `/auth/callback` additionally supports standard PKCE authorization-code exchange. Do not use the default fragment-based invitation template with this server-rendered app.
+The confirmation and recovery templates use `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=...`. The invite template uses the app-provided `{{ .RedirectTo }}` when present so admin/staff invitations retain their portal, and falls back to `{{ .SiteURL }}/auth/confirm?...` for dashboard-issued invites without a redirect. This supports cross-browser email use without relying on URL-fragment sessions. A confirmation page requires a deliberate POST before consuming the token, avoiding email-scanner GET consumption. `/auth/callback` additionally supports standard PKCE authorization-code exchange. Do not use the default fragment-based invitation template with this server-rendered app. Dashboard-issued invites do not assign an application role; use the controlled owner bootstrap for the first OWNER and the app's owner-only invitation flow for STAFF/ADMIN.
 
 Local config.toml enables verification, TOTP and these templates, and aligns localhost URLs. SQL migrations do not apply hosted Auth dashboard settings; configure them separately. Keep the `private` schema out of exposed API schemas.
 

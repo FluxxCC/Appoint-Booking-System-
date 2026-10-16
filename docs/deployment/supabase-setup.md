@@ -66,7 +66,7 @@ Offline types are derived from migrated database columns/enums/RPCs, not handwri
 
 ## Owner bootstrap and business provisioning
 
-1. Create/invite the real owner's Auth user through the Supabase dashboard. The database trigger creates an ordinary profile, with no privileged role.
+1. Create the real owner's account through the public registration flow and verify its email. The database trigger creates an ordinary profile, with no privileged role. Do not use a Supabase dashboard invitation for the first OWNER; an Auth invitation alone does not grant an application role.
 2. Enroll the owner in MFA using the Auth flow when implemented, or a controlled Supabase Auth client. Management access requires an `aal2` session.
 3. From the project directory, bootstrap the first verified owner with `npm run bootstrap:owner -- --user-id VERIFIED_AUTH_UUID --email VERIFIED_EMAIL`. The service-only routine checks the confirmed email and active profile and refuses if an OWNER already exists.
 
